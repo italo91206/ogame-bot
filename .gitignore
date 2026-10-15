@@ -1,0 +1,53 @@
+# credenciais / sessão / config local
+.env
+.env.*
+!.env.example
+settings.json
+.telegram_chat_id
+session_*.json
+storage_state*.json
+cookies*.json
+*credentials*
+
+# runtime / venv / cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# logs e debug
+logs/
+*.log
+*.jsonl
+debug/
+dumps/
+tmp/
+*.har
+*.trace
+trace.zip
+playwright-report/
+test-results/
+screenshots/
+*.png
+*.jpg
+*.webp
+
+# OS / IDE local
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+.vscode/
+*.code-workspace
+
+# probes one-off / artefatos locais
+scripts/_out/
+scripts/out/

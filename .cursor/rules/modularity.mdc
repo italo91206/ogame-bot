@@ -1,0 +1,26 @@
+---
+description: Arquitetura worker+adapter e limite de 500 LOC por arquivo
+alwaysApply: true
+---
+
+# meu-bot-ogame — modularidade
+
+Leia `AGENTS.md` e `FEATURES.md` antes de implementar features.
+
+## Camadas
+
+- `game/` = adapter Playwright (DOM I/O)
+- `runtime.py` = agenda workers
+- `features/` = decisão + tick (1 épico ≈ 1 módulo)
+- `main.py` / `compose.py` = composição only
+- `docs/` = artefatos (FOCUS, guias, handoffs) — não código
+
+Não misturar pick/caps de Brain com login/fingerprint. Não copiar regex DOM nos workers.
+
+## Regra 500 LOC
+
+Se um `.py` do projeto (fora `.venv`) tiver **mais de 500 linhas**, quebre-o **antes** de acrescentar responsabilidade.
+
+- Split por responsabilidade (session / celestial / tech / queues / pick vs worker).
+- Código novo não entra no arquivo inchado: extrai e importa.
+- Baseline já acima: `features/autoresearch.py` — split no próximo toque nesse arquivo. `game/` já split.

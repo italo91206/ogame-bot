@@ -1,0 +1,325 @@
+{
+  "Credentials": {
+    "LobbyPioneers": false,
+    "DeviceConf": {
+      "Name": "Device-name",
+      "System": "Windows",
+      "Browser": "Chrome",
+      "UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Memory": 8,
+      "Concurrency": 16,
+      "Color": 24,
+      "Width": 1920,
+      "Height": 1080,
+      "Timezone": "America/Sao_Paulo",
+      "Lang": "pt-BR"
+    }
+  },
+  "General": {
+    "SlotsToLeaveFree": 1,
+    "CaptchaAPIKey": "",
+    "Headless": true,
+    "IsolateExpeditions": true
+  },
+  "TelegramMessenger": {
+    "Active": true,
+    "Logging": false
+  },
+  "TelegramAutoPing": {
+    "Active": true,
+    "EveryHours": 6
+  },
+  "SleepMode": {
+    "Active": false,
+    "GoToSleep": "23:00",
+    "WakeUp": "08:00",
+    "PreventIfThereAreFleets": true,
+    "AutoFleetSave": {
+      "Active": false,
+      "OnlyMoons": false,
+      "DeutToLeave": 200000,
+      "Recall": true,
+      "DefaultMission": "Deploy"
+    }
+  },
+  "Defender": {
+    "Active": true,
+    "CheckIntervalMin": 1,
+    "CheckIntervalMax": 22,
+    "IgnoreProbes": true,
+    "IgnoreWeakAttack": false,
+    "WeakAttackRatio": 3,
+    "IgnoreAttackIfIHave": {
+      "Active": false,
+      "MinResourcesToSave": 2000000,
+      "MinFleetToSave": 20000000
+    },
+    "WhiteList": [],
+    "Autofleet": {
+      "Active": true,
+      "BuildCargosIfNeeded": true
+    },
+    "Alarm": {
+      "Active": true
+    },
+    "TelegramMessenger": {
+      "Active": true,
+      "CooldownMinutes": 60
+    }
+  },
+  "Expeditions": {
+    "Active": false,
+    "SlotsToLeaveFree": 2,
+    "MinWaitNextFleet": 5,
+    "MaxWaitNextFleet": 15,
+    "MinWaitNextRound": 30,
+    "MaxWaitNextRound": 300,
+    "WaitForAllExpeditions": false,
+    "WaitForMajorityOfExpeditions": false,
+    "RandomizeOrder": true,
+    "FuelToCarry": 0,
+    "PrimaryShip": "LargeCargo",
+    "MinPrimaryToSend": 1,
+    "PrimaryToKeep": 0,
+    "SecondaryShip": "Null",
+    "MinSecondaryToSend": 0,
+    "SecondaryToPrimaryRatio": 0,
+    "TopScore": 0,
+    "Origin": [{
+      "Galaxy": 1,
+      "System": 1,
+      "Position": 8,
+      "Type": "Planet"
+    }]
+  },
+  "AutoFarm": {
+    "Active": false,
+    "ScanRange": [],
+    "Exclude": [],
+    "KeepReportFor": 180,
+    "NumProbes": 10,
+    "Origin": [],
+    "TargetsProbedBeforeAttack": 30,
+    "SlotsToLeaveFree": 1,
+    "CheckIntervalMin": 30,
+    "CheckIntervalMax": 60
+  },
+  "AutoHarvest": {
+    "Active": false,
+    "HarvestOwnDF": true,
+    "HarvestDeepSpace": true,
+    "MinimumResourcesOwnDF": 300,
+    "MinimumResourcesDeepSpace": 50000,
+    "CheckIntervalMin": 30,
+    "CheckIntervalMax": 60
+  },
+  "AutoColonize": {
+    "Active": false,
+    "Origin": {
+      "Galaxy": 1,
+      "System": 1,
+      "Position": 8,
+      "Type": "Planet"
+    },
+    "SlotsToLeaveFree": 0,
+    "Abandon": {
+      "Active": false,
+      "MinFields": 280,
+      "MinTemperatureAcceptable": -130,
+      "MaxTemperatureAcceptable": 260
+    },
+    "IntensiveResearch": {
+      "Active": false,
+      "MaxSlots": 10,
+      "MinWaitNextFleet": 25,
+      "MaxWaitNextFleet": 55
+    },
+    "Targets": [
+      {
+        "Galaxy": 1,
+        "StartSystem": 1,
+        "EndSystem": 50,
+        "StartPosition": 4,
+        "EndPosition": 13,
+        "MaxPlanets": 10
+      }
+    ],
+    "RandomPosition": true,
+    "CheckIntervalMin": 30,
+    "CheckIntervalMax": 60
+  },
+  "AutoDiscovery": {
+    "Active": false,
+    "Origin": {
+      "Galaxy": 1,
+      "System": 1,
+      "Position": 8,
+      "Type": "Planet"
+    },
+    "MaxSlots": 5,
+    "MaxFailures": 5,
+    "CheckIntervalMin": 30,
+    "CheckIntervalMax": 60
+  },
+  "Brain": {
+    "Active": true,
+    "Transports": {
+      "Active": true,
+      "CargoType": "LargeCargo",
+      "DeutToLeave": 200000,
+      "RoundResources": true,
+      "OverflowFactor": 2,
+      "Origin": {
+        "Galaxy": 1,
+        "System": 1,
+        "Position": 8,
+        "Type": "Moon"
+      }
+    },
+    "AutoMine": {
+      "Active": true,
+      "Transports": { "Active": true },
+      "MaxMetalMine": 40,
+      "MaxCrystalMine": 35,
+      "MaxDeuteriumSynthetizer": 37,
+      "MaxSolarPlant": 20,
+      "MaxFusionReactor": 20,
+      "MaxMetalStorage": 13,
+      "MaxCrystalStorage": 12,
+      "MaxDeuteriumTank": 11,
+      "MaxRoboticsFactory": 10,
+      "MaxShipyard": 12,
+      "MaxResearchLab": 12,
+      "MaxMissileSilo": 0,
+      "MaxNaniteFactory": 7,
+      "MaxTerraformer": 8,
+      "MaxSpaceDock": 0,
+      "MaxLunarBase": 8,
+      "MaxLunarShipyard": 4,
+      "MaxLunarRoboticsFactory": 8,
+      "MaxSensorPhalanx": 6,
+      "MaxJumpGate": 1,
+      "RandomOrder": false,
+      "Exclude": [],
+      "OptimizeForStart": true,
+      "PrioritizeRobotsAndNanites": false,
+      "BuildDepositIfFull": false,
+      "BuildSolarSatellites": true,
+      "BuildCrawlers": false,
+      "DepositHours": 6,
+      "MaxDaysOfInvestmentReturn": 7,
+      "DeutToLeaveOnMoons": 200000,
+      "CheckIntervalMin": 10,
+      "CheckIntervalMax": 20
+    },
+    "AutoResearch": {
+      "Active": true,
+      "Transports": { "Active": false },
+      "MaxEnergyTechnology": 20,
+      "MaxLaserTechnology": 12,
+      "MaxIonTechnology": 5,
+      "MaxHyperspaceTechnology": 20,
+      "MaxPlasmaTechnology": 20,
+      "MaxCombustionDrive": 19,
+      "MaxImpulseDrive": 17,
+      "MaxHyperspaceDrive": 15,
+      "MaxEspionageTechnology": 8,
+      "MaxComputerTechnology": 20,
+      "MaxAstrophysics": 23,
+      "MaxIntergalacticResearchNetwork": 12,
+      "MaxWeaponsTechnology": 25,
+      "MaxShieldingTechnology": 25,
+      "MaxArmourTechnology": 25,
+      "Target": {},
+      "OptimizeForStart": true,
+      "EnsureExpoSlots": true,
+      "PrioritizeAstrophysics": true,
+      "PrioritizePlasmaTechnology": true,
+      "PrioritizeEnergyTechnology": true,
+      "PrioritizeIntergalacticResearchNetwork": true,
+      "CheckIntervalMin": 10,
+      "CheckIntervalMax": 20
+    },
+    "LifeformAutoMine": {
+      "Active": true,
+      "Transports": { "Active": true },
+      "StartFromCrystalMineLvl": 20,
+      "MaxBasePopulationBuilding": 60,
+      "MaxBaseFoodBuilding": 62,
+      "MaxBaseTechBuilding": 6,
+      "MaxT2Building": 10,
+      "MaxT3Building": 8,
+      "MaxBuilding6": 5,
+      "MaxBuilding7": 5,
+      "MaxBuilding8": 5,
+      "MaxBuilding9": 5,
+      "MaxBuilding10": 5,
+      "MaxBuilding11": 5,
+      "MaxBuilding12": 5,
+      "Exclude": [],
+      "PreventIfMoreExpensiveThanNextMine": true,
+      "CheckIntervalMin": 30,
+      "CheckIntervalMax": 60
+    },
+    "LifeformAutoResearch": {
+      "Active": true,
+      "Transports": { "Active": true },
+      "MaxResearchLevel": 6,
+      "MaxTechs11": 6,
+      "MaxTechs12": 6,
+      "MaxTechs13": 6,
+      "MaxTechs14": 6,
+      "MaxTechs15": 6,
+      "MaxTechs16": 6,
+      "MaxTechs21": 6,
+      "MaxTechs22": 6,
+      "MaxTechs23": 6,
+      "MaxTechs24": 6,
+      "MaxTechs25": 6,
+      "MaxTechs26": 6,
+      "MaxTechs31": 6,
+      "MaxTechs32": 6,
+      "MaxTechs33": 6,
+      "MaxTechs34": 6,
+      "MaxTechs35": 6,
+      "MaxTechs36": 6,
+      "Exclude": [],
+      "CheckIntervalMin": 30,
+      "CheckIntervalMax": 60
+    },
+    "AutoCargo": {
+      "Active": true,
+      "ExcludeMoons": false,
+      "CargoType": "LargeCargo",
+      "RandomOrder": false,
+      "MaxCargosToBuild": 50,
+      "MaxCargosToKeep": 200,
+      "LimitToCapacity": true,
+      "SkipIfIncomingTransport": true,
+      "Exclude": [],
+      "CheckIntervalMin": 60,
+      "CheckIntervalMax": 120
+    },
+    "AutoRepatriate": {
+      "Active": true,
+      "ExcludeMoons": true,
+      "MinimumResources": 1000000,
+      "LeaveDeut": {
+        "OnlyOnMoons": true,
+        "DeutToLeave": 1000000
+      },
+      "Target": {
+        "Galaxy": 1,
+        "System": 1,
+        "Position": 8,
+        "Type": "Moon"
+      },
+      "CargoType": "LargeCargo",
+      "RandomOrder": true,
+      "SkipIfIncomingTransport": true,
+      "Exclude": [],
+      "CheckIntervalMin": 30,
+      "CheckIntervalMax": 60
+    }
+  }
+}
