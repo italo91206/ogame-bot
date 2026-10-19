@@ -23,6 +23,7 @@ def send_fleet_ui(
     metal: int = 0,
     crystal: int = 0,
     deut: int = 0,
+    force_own_sibling: bool = False,
 ) -> str:
     """Configure fleetDispatcher + click continue/send. Returns ok / fail:…"""
     open_component(page, "fleetdispatch")
@@ -30,7 +31,7 @@ def send_fleet_ui(
     samples: list[dict[str, Any]] = [{"t": "boot", **snap(page)}]
 
     setup = page.evaluate(
-        """({ ships, galaxy, system, position, mission, speed, destType, holding, metal, crystal, deut }) => {
+        """({ ships, galaxy, system, position, mission, speed, destType, holding, metal, crystal, deut, forceSibling }) => {
           const fd = window.fleetDispatcher;
           if (!fd) return { ok: false, err: 'no fleetDispatcher' };
           const setVal = (sel, v) => {
@@ -41,6 +42,10 @@ def send_fleet_ui(
               el.dispatchEvent(new Event('change', { bubbles: true }));
             }
           };
+          // moon↔planet same coords: click type button before updateTarget
+          const typeSel = destType === 3 ? '#moon' : destType === 2 ? '#debris' : '#planet';
+          const typeBtn = document.querySelector(typeSel);
+          if (typeBtn) typeBtn.click();
           setVal('#galaxy', galaxy);
           setVal('#system', system);
           setVal('#position', position);
@@ -58,10 +63,14 @@ def send_fleet_ui(
           for (const [id, n] of Object.entries(ships || {})) {
             if (+n > 0 && typeof fd.selectShip === 'function') fd.selectShip(+id, +n);
           }
-          if (typeof fd.refreshTarget === 'function') fd.refreshTarget();
-          if (typeof fd.updateTarget === 'function') fd.updateTarget();
-          if (typeof fd.refresh === 'function') fd.refresh();
-          // method names / updateTarget source hint (V13 drift)
+          if (forceSibling) {
+            // V13 checkTarget #100 on own sibling — unlock UI without server OK
+            fd.targetOk = true;
+          } else {
+            if (typeof fd.refreshTarget === 'function') fd.refreshTarget();
+            if (typeof fd.updateTarget === 'function') fd.updateTarget();
+            if (typeof fd.refresh === 'function') fd.refresh();
+          }
           const proto = Object.getPrototypeOf(fd) || {};
           const methods = Object.getOwnPropertyNames(proto)
             .filter((k) => typeof fd[k] === 'function')
@@ -72,6 +81,7 @@ def send_fleet_ui(
           return {
             ok: true,
             mission: fd.mission,
+            forceSibling: !!forceSibling,
             tgt: {
               g: fd.targetPlanet.galaxy,
               s: fd.targetPlanet.system,
@@ -95,6 +105,7 @@ def send_fleet_ui(
             "metal": int(metal),
             "crystal": int(crystal),
             "deut": int(deut),
+            "forceSibling": bool(force_own_sibling),
         },
     )
     samples.append({"t": "after_setup", **snap(page)})
@@ -108,7 +119,7 @@ def send_fleet_ui(
     # return logo após click; navigation destroyed → ok.
     try:
         click = page.evaluate(
-            """async ({ mission, metal, crystal, deut }) => {
+            """async ({ mission, metal, crystal, deut, forceSibling }) => {
               const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
               const snapMini = () => {
                 const b = (sel) => {
@@ -226,29 +237,46 @@ def send_fleet_ui(
                 return false;
               };
               await sleep(800);
-              const gate1 = await waitGate(
-                12000,
-                'pre_c2_gate',
-                () => shipsSelected() && (checkTargetOk() || btnUsable('#continueToFleet2')),
-              );
-              if (!gate1) {
-                return { ok: false, err: 'pre_c2 gate timeout (ships/targetOk)', step: 1, timeline };
-              }
-              const lastCt = [...(window.__fleetAjaxLog || [])].reverse()
-                .find((r) => /checkTarget/i.test(String(r.url || '')));
-              if (lastCt && lastCt.body && lastCt.body.errors) {
-                const e100 = (lastCt.body.errors || []).some((e) => e && e.error === 100);
-                if (e100) {
-                  return {
-                    ok: false,
-                    err: 'checkTarget #100 via updateTarget (bloqueia fleet3)',
-                    step: 1,
-                    timeline,
-                    lastCt,
-                  };
+              if (forceSibling) {
+                const fd0 = window.fleetDispatcher;
+                if (fd0) fd0.targetOk = true;
+                // unlock continue buttons when server checkTarget stays broken
+                for (const sel of ['#continueToFleet2', '#continueToFleet3', '#sendFleet']) {
+                  const el = document.querySelector(sel);
+                  if (!el) continue;
+                  el.classList.remove('off');
+                  el.removeAttribute('disabled');
                 }
               }
-              if (!btnUsable('#continueToFleet2')) {
+              const gate1 = await waitGate(
+                forceSibling ? 4000 : 12000,
+                'pre_c2_gate',
+                () => shipsSelected() && (
+                  forceSibling
+                  || checkTargetOk()
+                  || btnUsable('#continueToFleet2')
+                ),
+              );
+              if (!gate1 && !forceSibling) {
+                return { ok: false, err: 'pre_c2 gate timeout (ships/targetOk)', step: 1, timeline };
+              }
+              if (!forceSibling) {
+                const lastCt = [...(window.__fleetAjaxLog || [])].reverse()
+                  .find((r) => /checkTarget/i.test(String(r.url || '')));
+                if (lastCt && lastCt.body && lastCt.body.errors) {
+                  const e100 = (lastCt.body.errors || []).some((e) => e && e.error === 100);
+                  if (e100) {
+                    return {
+                      ok: false,
+                      err: 'checkTarget #100 via updateTarget (bloqueia fleet3)',
+                      step: 1,
+                      timeline,
+                      lastCt,
+                    };
+                  }
+                }
+              }
+              if (!btnUsable('#continueToFleet2') && !forceSibling) {
                 const el = document.querySelector('#continueToFleet2');
                 if (!el) return { ok: false, err: 'continueToFleet2 missing', step: 2, timeline };
               }
@@ -256,7 +284,8 @@ def send_fleet_ui(
               if (fd && typeof fd.trySubmitFleet1 === 'function') {
                 try { fd.trySubmitFleet1(); } catch (e) {}
               } else {
-                document.querySelector('#continueToFleet2').click();
+                const c2 = document.querySelector('#continueToFleet2');
+                if (c2) c2.click();
               }
               timeline.push({ t: 0, clicked: 'c2', ...snapMini() });
               await sleep(1000);
@@ -279,19 +308,43 @@ def send_fleet_ui(
                 timeline.push({ t: 0, clicked: 'c3', ...snapMini() });
                 await sleep(500);
               }
-              if (fd) fd.mission = mission;
+              if (fd) {
+                fd.mission = mission;
+                if (forceSibling) fd.targetOk = true;
+              }
               const mb = document.querySelector('#missionButton' + mission);
               if (mb) mb.click();
               await sleep(300);
               const sendReady = () => {
                 const el = document.querySelector('#sendFleet');
                 if (!el) return false;
+                if (forceSibling) {
+                  el.classList.remove('off');
+                  el.removeAttribute('disabled');
+                  return true;
+                }
                 if (el.classList.contains('off')) return false;
                 if (el.classList.contains('on')) return true;
                 return btnUsable('#sendFleet');
               };
-              const gateS = await waitGate(12000, 'send_gate', sendReady);
+              const gateS = await waitGate(forceSibling ? 3000 : 12000, 'send_gate', sendReady);
               if (!sendReady()) {
+                // last resort sibling: fleetDispatcher submit helpers
+                if (forceSibling && fd) {
+                  try {
+                    if (typeof fd.trySubmitFleet === 'function') fd.trySubmitFleet();
+                    else if (typeof fd.submitFleet3 === 'function') fd.submitFleet3();
+                    timeline.push({ t: 0, siblingSubmit: true, ...snapMini() });
+                    return { ok: true, clicked: true, siblingSubmit: true, timeline };
+                  } catch (e) {
+                    return {
+                      ok: false,
+                      err: 'sibling submit: ' + String(e).slice(0, 80),
+                      step: 4,
+                      timeline,
+                    };
+                  }
+                }
                 return {
                   ok: false,
                   err: 'sendFleet timeout (V13: sem #continueToFleet3)',
@@ -314,15 +367,20 @@ def send_fleet_ui(
                   timeline,
                 };
               }
-              document.querySelector('#sendFleet').click();
+              const sendBtn = document.querySelector('#sendFleet');
+              if (!sendBtn) {
+                return { ok: false, err: 'sendFleet missing', step: 6, timeline };
+              }
+              sendBtn.click();
               // não await ajax — redirect mata o context
-              return { ok: true, clicked: true, cargo, timeline };
+              return { ok: true, clicked: true, cargo, timeline, forceSibling: !!forceSibling };
             }""",
             {
                 "mission": int(mission),
                 "metal": int(metal),
                 "crystal": int(crystal),
                 "deut": int(deut),
+                "forceSibling": bool(force_own_sibling),
             },
         )
     except Exception as e:

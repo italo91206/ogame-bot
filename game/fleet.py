@@ -97,6 +97,7 @@ def parse_ships(page: Page) -> dict[int, dict[str, int]]:
     return out
 
 
+from .discovery import send_discovery  # noqa: E402 — re-export public API
 from .fleet_dispatch import (  # noqa: E402 — re-export public API
     DEST_DEBRIS,
     DEST_MOON,
@@ -109,10 +110,33 @@ from .fleet_dispatch import (  # noqa: E402 — re-export public API
     MISSION_HARVEST,
     MISSION_SPY,
     MISSION_TRANSPORT,
-    send_discovery,
-    send_expedition,
     send_fleet,
 )
+from .fleet_ui import send_fleet_ui  # noqa: E402
+
+
+def send_expedition(
+    page: Page,
+    ships: dict[int, int],
+    galaxy: int,
+    system: int,
+    *,
+    holding: int = 1,
+    deut: int = 0,
+) -> str:
+    """Send expo to [g:s:16]. V13: UI fleetDispatcher (AJAX checkTarget quebra com #100)."""
+    return send_fleet_ui(
+        page,
+        ships,
+        galaxy,
+        system,
+        16,
+        mission=MISSION_EXPEDITION,
+        speed=10,
+        dest_type=DEST_PLANET,
+        holding=holding,
+        deut=deut,
+    )
 
 _COORDS_RE = re.compile(r"\[(\d+):(\d+):(\d+)\]")
 _RECALL_HREF_RE = re.compile(
@@ -182,31 +206,100 @@ def recall_fleet(page: Page, fleet_id: int) -> str:
     return "ok"
 
 
-def has_incoming_transport(
+def _event_list_html(page: Page) -> str:
+    base = page.url.split("?")[0]
+    url = f"{base}?page=componentOnly&component=eventList&ajax=1"
+    try:
+        return page.request.get(
+            url, headers={"X-Requested-With": "XMLHttpRequest"}
+        ).text() or ""
+    except Exception:
+        return page.content()
+
+
+def transport_arrive_in(
     page: Page, galaxy: int, system: int, position: int, *, moon: bool
-) -> bool:
-    """True if outbound transport (mission 3) targets this celestial."""
+) -> float | None:
+    """Seconds until earliest inbound transport (mission 3 outbound) to dest."""
+    now = time.time()
+    best: float | None = None
+    html = _event_list_html(page)
+    for m in re.finditer(
+        r'<tr[^>]*data-mission-type="3"[^>]*>.*?</tr>',
+        html,
+        re.I | re.S,
+    ):
+        row = m.group(0)
+        if re.search(r'data-return-flight="(?:true|1)"', row, re.I):
+            continue
+        coords = _COORDS_RE.findall(row)
+        if not coords:
+            continue
+        g, s, p = (int(x) for x in coords[-1])
+        if g != galaxy or s != system or p != position:
+            continue
+        dest_fleet = ""
+        dm = re.search(r'class="[^"]*destFleet[^"]*"[^>]*>([^<]*)', row, re.I)
+        if dm:
+            dest_fleet = dm.group(1)
+        is_moon = "moon" in dest_fleet.lower() or "lua" in dest_fleet.lower()
+        if is_moon != moon:
+            continue
+        am = re.search(r'data-arrival-time="(\d+)"', row, re.I)
+        if not am:
+            continue
+        eta = int(am.group(1)) - now
+        if eta < 0:
+            continue
+        if best is None or eta < best:
+            best = eta
+    if best is not None:
+        return best
+    # fallback: live DOM (same page may already have eventbox)
     rows = page.locator('tr.eventFleet[data-mission-type="3"]')
     for i in range(rows.count()):
         el = rows.nth(i)
         ret = el.get_attribute("data-return-flight") or ""
         if ret in ("true", "1"):
             continue
-        dest = el.locator("td.destCoords").inner_text() if el.locator("td.destCoords").count() else ""
-        m = _COORDS_RE.search(dest)
-        if not m:
+        dest = (
+            el.locator("td.destCoords").inner_text()
+            if el.locator("td.destCoords").count()
+            else ""
+        )
+        cm = _COORDS_RE.search(dest)
+        if not cm:
             continue
         if (
-            int(m.group(1)) != galaxy
-            or int(m.group(2)) != system
-            or int(m.group(3)) != position
+            int(cm.group(1)) != galaxy
+            or int(cm.group(2)) != system
+            or int(cm.group(3)) != position
         ):
             continue
-        dest_fleet = el.locator("td.destFleet").inner_text() if el.locator("td.destFleet").count() else ""
+        dest_fleet = (
+            el.locator("td.destFleet").inner_text()
+            if el.locator("td.destFleet").count()
+            else ""
+        )
         is_moon = "moon" in dest_fleet.lower() or "lua" in dest_fleet.lower()
-        if is_moon == moon:
-            return True
-    return False
+        if is_moon != moon:
+            continue
+        arrival = el.get_attribute("data-arrival-time")
+        if not arrival or not arrival.isdigit():
+            continue
+        eta = int(arrival) - now
+        if eta < 0:
+            continue
+        if best is None or eta < best:
+            best = eta
+    return best
+
+
+def has_incoming_transport(
+    page: Page, galaxy: int, system: int, position: int, *, moon: bool
+) -> bool:
+    """True if outbound transport (mission 3) targets this celestial."""
+    return transport_arrive_in(page, galaxy, system, position, moon=moon) is not None
 
 
 def expo_back_in(page: Page, *, latest: bool = False) -> float | None:

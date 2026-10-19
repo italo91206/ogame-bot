@@ -25,6 +25,80 @@ def current_resources(page: Page) -> dict[str, str]:
     }
 
 
+@dataclass
+class Population:
+    """LF population from #population_box tooltip (ogamed ResourcesDetails)."""
+
+    available: int = 0
+    t2: int = 0
+    t3: int = 0
+    living_space: int = 0
+    satisfied: int = 0
+    hungry: float = 0.0
+
+    def is_full(self) -> bool:
+        return self.available >= self.living_space > 0
+
+    def is_starving(self) -> bool:
+        return self.hungry > 0 or (
+            self.satisfied > 0 and self.available > self.satisfied
+        )
+
+    def will_starve(self) -> bool:
+        return self.living_space > self.satisfied > 0 or (
+            self.living_space > 0 and self.satisfied == 0 and self.available > 0
+        )
+
+    def food_for_more(self) -> bool:
+        return self.satisfied > self.available
+
+    def needs_more_t2(self, bonus: float = 0.0) -> bool:
+        cap = 11_000_000.0 * (1.0 - float(bonus) / 100.0)
+        return self.t2 < cap
+
+    def needs_more_t3(self, bonus: float = 0.0) -> bool:
+        cap = 448_000_000.0 * (1.0 - float(bonus) / 100.0)
+        return self.t3 < cap
+
+
+_POP_BOX_TITLE_RE = re.compile(
+    r'id="population_box"[\s\S]*?title="([^"]+)"', re.I
+)
+_POP_TD_RE = re.compile(r"<td[^>]*>\s*<span[^>]*>([^<]*)</span>", re.I)
+
+
+def parse_population_tooltip(title: str) -> Population | None:
+    """Parse Population|&lt;table…&gt; tooltip (HTML-escaped or raw)."""
+    tip = htmlmod.unescape(title or "")
+    if "|" in tip:
+        tip = tip.split("|", 1)[1]
+    vals = _POP_TD_RE.findall(tip)
+    if len(vals) < 6:
+        return None
+    hungry_raw = (vals[5] or "0").strip().replace("±", "").replace(",", ".")
+    try:
+        hungry = float(re.sub(r"[^\d.\-]", "", hungry_raw) or "0")
+    except ValueError:
+        hungry = 0.0
+    return Population(
+        available=parse_ogame_int(vals[0]),
+        t2=parse_ogame_int(vals[1]),
+        t3=parse_ogame_int(vals[2]),
+        living_space=parse_ogame_int(vals[3]),
+        satisfied=parse_ogame_int(vals[4]),
+        hungry=hungry,
+    )
+
+
+def parse_population(page: Page) -> Population | None:
+    """LF population stats from #population_box title tooltip."""
+    html = page.content()
+    m = _POP_BOX_TITLE_RE.search(html)
+    if not m:
+        return None
+    return parse_population_tooltip(m.group(1))
+
+
 def parse_ogame_int(raw: str) -> int:
     """Parse UI numbers like '1.234', '-500', '2M' → int."""
     s = (raw or "").strip().replace("\xa0", "").replace(" ", "")
@@ -356,4 +430,23 @@ if __name__ == "__main__":
         {"metal": str(2000 + JUMP_ABS), "crystal": "0", "deut": "0", "energy": "0"},
         {},
     ) is True
+    tip = (
+        "Population|<table class=\"resourceTooltip\">"
+        "<tr><th>Available:</th><td><span class=\"\">210</span></td></tr>"
+        "<tr><th>T2 Lifeforms</th><td><span class=\"\">0</span></td></tr>"
+        "<tr><th>T3 Lifeforms</th><td><span class=\"\">0</span></td></tr>"
+        "<tr><th>Living Space</th><td><span class=\"\">922</span></td></tr>"
+        "<tr><th>Satisfied</th><td><span class=\"undermark\">590</span></td></tr>"
+        "<tr><th>Hungry</th><td><span class=\"overmark\">0</span></td></tr>"
+        "<tr><th>Growth rate</th><td><span class=\"\">±0.004</span></td></tr>"
+        "<tr><th>Bunker Space</th><td><span class=\"middlemark\">100</span></td></tr>"
+        "</table>"
+    )
+    pop = parse_population_tooltip(tip)
+    assert pop is not None
+    assert pop.available == 210 and pop.living_space == 922 and pop.satisfied == 590
+    assert not pop.is_starving() and pop.food_for_more() and pop.needs_more_t2()
+    tip2 = tip.replace(">590<", ">100<")
+    pop2 = parse_population_tooltip(tip2)
+    assert pop2 is not None and pop2.is_starving()
     print("resources ok")

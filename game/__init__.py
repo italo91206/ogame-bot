@@ -34,6 +34,7 @@ from .fleet import (
     send_discovery,
     send_expedition,
     send_fleet,
+    transport_arrive_in,
 )
 from .galaxy import fetch_galaxy, ogame_distance, parse_inactive_from_html
 from .models import Celestial, Coords, FleetSlots, LogFn
@@ -53,6 +54,7 @@ from .queues import (
     research_queue,
 )
 from .resources import (
+    Population,
     ResSnap,
     ResourceBook,
     current_resources,
@@ -60,6 +62,8 @@ from .resources import (
     format_ogame_int,
     grab_resource,
     parse_ogame_int,
+    parse_population,
+    parse_population_tooltip,
     resource_production_per_hour,
     resource_storage,
     secs_until_resources,
@@ -67,6 +71,7 @@ from .resources import (
 from . import dom_health
 from .session import login, resume_session, revive_headless
 from .tech import Tech, build_technology, open_component, parse_technologies, peek_tech_costs
+from .vacation import is_vacation_mode
 
 __all__ = [
     "Celestial",
@@ -74,6 +79,7 @@ __all__ = [
     "FleetSlots",
     "HostileAttack",
     "LogFn",
+    "Population",
     "ResSnap",
     "ResourceBook",
     "Tech",
@@ -96,6 +102,7 @@ __all__ = [
     "go_headless",
     "grab_resource",
     "is_only_probes",
+    "is_vacation_mode",
     "launch_browser",
     "list_hostile_attacks",
     "attack_alert_lit",
@@ -113,6 +120,8 @@ __all__ = [
     "parse_lf_building_queue",
     "parse_lf_research_queue",
     "parse_ogame_int",
+    "parse_population",
+    "parse_population_tooltip",
     "parse_research_queue",
     "parse_ships",
     "fleet_slots",
@@ -132,6 +141,7 @@ __all__ = [
     "send_expedition",
     "send_fleet",
     "session_path",
+    "transport_arrive_in",
     "switch_celestial",
     "wait_captcha",
 ]

@@ -1,14 +1,11 @@
 """Fleet AJAX dispatch: checkTarget + sendFleet (jQuery/fetch in-page)."""
 from __future__ import annotations
 
-import json
-import re
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from playwright.sync_api import Page
 
+from .fleet_ajax import _debug_dump, _err_bits, _fleet_post, _token
 from .tech import open_component
 
 MISSION_ATTACK = 1
@@ -20,26 +17,6 @@ MISSION_HARVEST = 8
 MISSION_EXPEDITION = 15
 MISSION_DISCOVERY = 18
 DEST_PLANET, DEST_DEBRIS, DEST_MOON = 1, 2, 3
-
-_DEBUG_PATH = Path(__file__).resolve().parent.parent / "logs" / "fleet_debug.jsonl"
-
-
-def _token(html: str) -> str | None:
-    m = re.search(r'var token = "([^"]+)"', html) or re.search(
-        r'var fleetSendingToken = "([^"]+)"', html
-    )
-    return m.group(1) if m else None
-
-
-def _debug_dump(event: str, payload: dict[str, Any]) -> None:
-    """Append one JSON line for offline root-cause (logs/fleet_debug.jsonl)."""
-    try:
-        _DEBUG_PATH.parent.mkdir(exist_ok=True)
-        row = {"ts": datetime.now().isoformat(timespec="seconds"), "event": event, **payload}
-        with _DEBUG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
-    except Exception:
-        pass
 
 
 def _probe_dispatcher(page: Page) -> dict[str, Any]:
@@ -92,150 +69,71 @@ def _is_inquiry_100(resp: dict[str, Any]) -> bool:
     return isinstance(err, dict) and err.get("error") == 100
 
 
-def _fleet_post(page: Page, action: str, form: dict[str, str]) -> dict[str, Any]:
-    """POST via jQuery.ajax (URL própria ajax=1&asJson=1&cp=, paridade ogamed)."""
-    cp_m = re.search(r"[?&]cp=(\d+)", page.url)
+def _hidden_fleet_fields(page: Page) -> dict[str, str]:
+    """Hidden inputs on fleetdispatch (ogamed ExtractHiddenFields)."""
     try:
-        data = page.evaluate(
-            """async ({ action, form }) => {
-              // não usar checkTargetUrl do jogo: V13 omite ajax=1 e às vezes cp
-              const u = new URL(location.href);
-              const cp = u.searchParams.get('cp');
-              let url = '?page=ingame&component=fleetdispatch&action='
-                + encodeURIComponent(action) + '&ajax=1&asJson=1';
-              if (cp) url += '&cp=' + encodeURIComponent(cp);
-              const $ = window.jQuery || window.$;
-              if (typeof $ === 'function' && $.ajax) {
-                const j = await new Promise((resolve) => {
-                  $.ajax({
-                    url,
-                    type: 'POST',
-                    dataType: 'json',
-                    data: form,
-                    success: (resp, _t, xhr) => {
-                      const out = (resp && typeof resp === 'object') ? resp : {success:false, message:String(resp)};
-                      out._http = xhr ? xhr.status : 200;
-                      out._via = 'jquery';
-                      out._cp = cp || '';
-                      out._action = action;
-                      out._url = url;
-                      resolve(out);
-                    },
-                    error: (xhr, _s, err) => {
-                      let body = (xhr && xhr.responseText) ? xhr.responseText.slice(0, 200) : String(err);
-                      let parsed = null;
-                      try { parsed = JSON.parse(xhr.responseText); } catch (e) {}
-                      if (parsed && typeof parsed === 'object') {
-                        parsed._http = xhr ? xhr.status : 0;
-                        parsed._via = 'jquery-error';
-                        parsed._cp = cp || '';
-                        parsed._action = action;
-                        parsed._url = url;
-                        resolve(parsed);
-                      } else {
-                        resolve({
-                          success: false,
-                          errors: [{ message: 'jquery ' + body }],
-                          _http: xhr ? xhr.status : 0,
-                          _via: 'jquery-error',
-                          _cp: cp || '',
-                          _action: action,
-                          _url: url,
-                        });
-                      }
-                    },
-                  });
-                });
-                return j;
-              }
-              const body = new URLSearchParams();
-              for (const [k, v] of Object.entries(form || {})) body.set(k, String(v));
-              const r = await fetch(url, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                  'X-Requested-With': 'XMLHttpRequest',
-                },
-                body,
+        raw = page.evaluate(
+            """() => {
+              const out = {};
+              document.querySelectorAll(
+                'form input[type=hidden], #fleetdispatchcomponent input[type=hidden]'
+              ).forEach((el) => {
+                if (el.name && el.name !== 'token') out[el.name] = String(el.value || '');
               });
-              const text = await r.text();
-              let j;
-              try { j = JSON.parse(text); }
-              catch {
-                return {
-                  success: false,
-                  errors: [{ message: 'non-json http' + r.status + ':' + text.slice(0, 100) }],
-                  _http: r.status, _via: 'fetch', _cp: cp || '', _action: action, _url: url,
-                };
-              }
-              if (!j || typeof j !== 'object') {
-                return {
-                  success: false,
-                  errors: [{ message: 'resp type=' + typeof j }],
-                  _http: r.status, _via: 'fetch', _cp: cp || '', _action: action, _url: url,
-                };
-              }
-              j._http = r.status; j._via = 'fetch'; j._cp = cp || ''; j._action = action; j._url = url;
-              return j;
-            }""",
-            {"action": action, "form": form},
+              return out;
+            }"""
         )
-    except Exception as e:
-        return {
-            "success": False,
-            "errors": [{"message": f"post evaluate: {str(e).split(chr(10), 1)[0][:100]}"}],
-            "_http": 0,
-            "_via": "evaluate-fail",
-            "_cp": cp_m.group(1) if cp_m else "",
-            "_action": action,
-        }
-    if not isinstance(data, dict):
-        return {
-            "success": False,
-            "errors": [{"message": f"resp type={type(data).__name__}"}],
-            "_http": 0,
-            "_via": "bad-type",
-            "_cp": cp_m.group(1) if cp_m else "",
-            "_action": action,
-        }
-    return data
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
 
 
-def _err_bits(resp: dict[str, Any]) -> str:
-    parts: list[str] = []
-    for e in (resp.get("errors") or [])[:3]:
-        if isinstance(e, dict):
-            m = str(e.get("message") or "?")
-            c = e.get("error")
-            parts.append(f"{m}#{c}" if c is not None else m)
-        else:
-            parts.append(str(e)[:80])
-    if not parts:
-        top = resp.get("message")
-        parts.append(str(top)[:100] if top else "sem errors[]")
-    flags: list[str] = []
-    for k in ("success", "targetOk", "ok", "status", "error"):
-        if k in resp and resp[k] is not None and resp[k] != "":
-            flags.append(f"{k}={resp[k]!r}" if k in ("status", "error") else f"{k}={resp[k]}")
-    for k in ("_http", "_via", "_cp"):
-        if resp.get(k) not in (None, ""):
-            flags.append(f"{k[1:]}={resp[k]}")
-    extra = [k for k in ("fleetSendingToken", "newAjaxToken", "redirectUrl") if resp.get(k)]
-    if extra:
-        flags.append("has:" + "+".join(extra))
-    tp = resp.get("targetPlanet")
-    if isinstance(tp, dict) and tp:
-        flags.append(
-            f"tgt=[{tp.get('galaxy')}:{tp.get('system')}:{tp.get('position')}]"
-            f"/{tp.get('type')}"
+def _current_celestial_type(page: Page) -> int | None:
+    """1=planet, 3=moon; None if unknown."""
+    try:
+        t = page.evaluate(
+            """() => {
+              const fd = window.fleetDispatcher;
+              if (fd && fd.currentPlanet && fd.currentPlanet.type != null)
+                return Number(fd.currentPlanet.type);
+              if (document.querySelector(
+                '#planetList .hightlightMoon, #planetList .smallplanet.hightlightMoon'
+              )) return 3;
+              const row = document.querySelector(
+                '#planetList .smallplanet.active, #planetList .hightlightPlanet'
+              );
+              if (row && row.querySelector('a.moonlink.active')) return 3;
+              return 1;
+            }"""
         )
-    orders = resp.get("orders")
-    if isinstance(orders, dict):
-        # quais missões o servidor liberou
-        on = [k for k, v in orders.items() if v]
-        flags.append("orders=" + (",".join(on) if on else "none"))
-    return "; ".join(parts) + (f" [{', '.join(flags)}]" if flags else "")
+        return int(t) if t in (1, 2, 3) else None
+    except Exception:
+        return None
+
+
+def _is_own_sibling_dest(
+    page: Page, galaxy: int, system: int, position: int, dest_type: int
+) -> bool:
+    """True if dest is same G:S:P as current celestial but other type (moon↔planet)."""
+    if int(dest_type) not in (DEST_PLANET, DEST_MOON):
+        return False
+    probe = _probe_dispatcher(page)
+    cur = probe.get("current") if isinstance(probe, dict) else None
+    if not isinstance(cur, dict):
+        return False
+    try:
+        if (
+            int(cur.get("g") or -1) != int(galaxy)
+            or int(cur.get("s") or -1) != int(system)
+            or int(cur.get("p") or -1) != int(position)
+        ):
+            return False
+    except (TypeError, ValueError):
+        return False
+    cur_type = _current_celestial_type(page)
+    if cur_type is None:
+        return False
+    return int(cur_type) != int(dest_type)
 
 
 def _form_snip(form: dict[str, str]) -> str:
@@ -324,50 +222,99 @@ def send_fleet(
     if not token:
         _debug_dump("no_token", {"url": page.url[-120:], "dispatcher": _probe_dispatcher(page)})
         return "fail: sem token (fleetdispatch)"
-    # payload mínimo (ogamed + userscripts) — sem hidden extras da UI
-    form: dict[str, str] = {
-        "token": token,
-        "galaxy": str(galaxy),
-        "system": str(system),
-        "position": str(position),
-        "type": str(dest_type),
-        "union": "0",
-    }
+    sibling = _is_own_sibling_dest(page, galaxy, system, position, dest_type)
+    # ogamed: hidden fields + coords/ships; V13 moon↔planet same G:S:P often #100
+    form: dict[str, str] = dict(_hidden_fleet_fields(page))
+    form.update(
+        {
+            "token": token,
+            "galaxy": str(galaxy),
+            "system": str(system),
+            "position": str(position),
+            "type": str(dest_type),
+            "union": "0",
+        }
+    )
     for sid, n in ships.items():
         if n > 0:
             form[f"am{sid}"] = str(int(n))
+    # sibling: UI first (force own dest) — AJAX checkTarget breaks on same coords
+    if sibling:
+        from .fleet_ui import send_fleet_ui
+
+        _debug_dump(
+            "sibling_ui_first",
+            {
+                "form": {k: v for k, v in form.items() if k != "token"},
+                "dest_type": dest_type,
+            },
+        )
+        ui = send_fleet_ui(
+            page,
+            ships,
+            galaxy,
+            system,
+            position,
+            mission=mission,
+            speed=speed,
+            dest_type=dest_type,
+            holding=holding,
+            metal=metal,
+            crystal=crystal,
+            deut=deut,
+            force_own_sibling=True,
+        )
+        if ui == "ok":
+            return "ok"
+        # fall through to AJAX; keep ui err for final message
+        sibling_ui_err = ui
+    else:
+        sibling_ui_err = None
+
     check = _fleet_post(page, "checkTarget", form)
     if not (check.get("targetOk") or check.get("success") or check.get("ok")):
-        # V13: checkTarget AJAX #100 — fallback UI (fleetDispatcher), como Quick Expe
+        # V13: checkTarget AJAX #100 — retry once (TRYAGAIN) then UI fallback
         if _is_inquiry_100(check):
-            from .fleet_ui import send_fleet_ui
+            page.wait_for_timeout(600)
+            tok2 = _token(page.content()) or form.get("token") or token
+            form["token"] = tok2
+            form.update(_hidden_fleet_fields(page))
+            check = _fleet_post(page, "checkTarget", form)
+        if not (check.get("targetOk") or check.get("success") or check.get("ok")):
+            if _is_inquiry_100(check):
+                from .fleet_ui import send_fleet_ui
 
-            _debug_dump(
-                "checkTarget_100_ui_fallback",
-                {
-                    "form": {k: v for k, v in form.items() if k != "token"},
-                    "url": check.get("_url"),
-                    "via": check.get("_via"),
-                },
-            )
-            ui = send_fleet_ui(
-                page,
-                ships,
-                galaxy,
-                system,
-                position,
-                mission=mission,
-                speed=speed,
-                dest_type=dest_type,
-                holding=holding,
-                metal=metal,
-                crystal=crystal,
-                deut=deut,
-            )
-            if ui == "ok":
-                return "ok"
-            return f"{_fail_check(page, form, check, token)} | ui={ui}"
-        return _fail_check(page, form, check, token)
+                _debug_dump(
+                    "checkTarget_100_ui_fallback",
+                    {
+                        "form": {k: v for k, v in form.items() if k != "token"},
+                        "url": check.get("_url"),
+                        "via": check.get("_via"),
+                        "sibling": sibling,
+                    },
+                )
+                ui = send_fleet_ui(
+                    page,
+                    ships,
+                    galaxy,
+                    system,
+                    position,
+                    mission=mission,
+                    speed=speed,
+                    dest_type=dest_type,
+                    holding=holding,
+                    metal=metal,
+                    crystal=crystal,
+                    deut=deut,
+                    force_own_sibling=sibling,
+                )
+                if ui == "ok":
+                    return "ok"
+                base = _fail_check(page, form, check, token)
+                if sibling_ui_err:
+                    return f"{base} | ui={ui} | sibling_ui={sibling_ui_err}"
+                return f"{base} | ui={ui}"
+            return _fail_check(page, form, check, token)
     if check.get("newAjaxToken"):
         form["token"] = check["newAjaxToken"]
     form.update(
@@ -403,69 +350,6 @@ def send_fleet(
     return (
         f"fail sendFleet: {_err_bits(res)} | {_form_snip(form)} | "
         f"tok={tok2}… | {_planet_deut_snip(page)} | via={res.get('_via')}"
-    )
-
-
-def send_discovery(page: Page, galaxy: int, system: int, position: int) -> str:
-    """POST sendDiscoveryFleet (sem naves). Custo ~5k/1k/500. Returns ok / fail:…"""
-    open_component(page, "fleetdispatch")
-    html = page.content()
-    token = _token(html)
-    if not token:
-        _debug_dump("discovery_no_token", {"url": page.url[-120:]})
-        return "fail: sem token (fleetdispatch)"
-    form = {
-        "token": token,
-        "galaxy": str(int(galaxy)),
-        "system": str(int(system)),
-        "position": str(int(position)),
-    }
-    res = _fleet_post(page, "sendDiscoveryFleet", form)
-    inner = res.get("response") if isinstance(res.get("response"), dict) else res
-    if isinstance(inner, dict) and inner.get("success"):
-        return "ok"
-    msg = ""
-    if isinstance(inner, dict):
-        msg = str(inner.get("message") or "")
-    if not msg:
-        msg = _err_bits(res)
-    _debug_dump(
-        "discovery_fail",
-        {
-            "form": {k: v for k, v in form.items() if k != "token"},
-            "response": {
-                k: v
-                for k, v in res.items()
-                if k not in ("fleetSendingToken", "newAjaxToken", "components")
-            },
-        },
-    )
-    return f"fail: {msg}"
-
-
-def send_expedition(
-    page: Page,
-    ships: dict[int, int],
-    galaxy: int,
-    system: int,
-    *,
-    holding: int = 1,
-    deut: int = 0,
-) -> str:
-    """Send expo to [g:s:16]. V13: UI fleetDispatcher (AJAX checkTarget quebra com #100)."""
-    from .fleet_ui import send_fleet_ui
-
-    return send_fleet_ui(
-        page,
-        ships,
-        galaxy,
-        system,
-        16,
-        mission=MISSION_EXPEDITION,
-        speed=10,
-        dest_type=DEST_PLANET,
-        holding=holding,
-        deut=deut,
     )
 
 
