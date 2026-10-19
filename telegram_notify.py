@@ -13,6 +13,36 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parent
 # ponytail: persiste chat_id após 1º /start se .env ainda não tem; preferir TELEGRAM_CHAT_ID
 _BIND = ROOT / ".telegram_chat_id"
+HEARTBEAT = ROOT / "logs" / "heartbeat"
+CLEAN_STOP = ROOT / "logs" / "bot_stopped"
+
+
+def write_heartbeat() -> None:
+    try:
+        HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
+        HEARTBEAT.write_text(f"{time.time():.3f}\n", encoding="utf-8")
+        if CLEAN_STOP.exists():
+            CLEAN_STOP.unlink()
+    except OSError:
+        pass
+
+
+def mark_clean_stop() -> None:
+    """Saída graciosa — watchdog não deve alertar 'morto'."""
+    try:
+        CLEAN_STOP.parent.mkdir(parents=True, exist_ok=True)
+        CLEAN_STOP.write_text(f"{time.time():.3f}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def heartbeat_age_s() -> float | None:
+    """Segundos desde o último beat; None se arquivo ausente/inválido."""
+    try:
+        raw = HEARTBEAT.read_text(encoding="utf-8").strip().split()[0]
+        return max(0.0, time.time() - float(raw))
+    except (OSError, ValueError, IndexError):
+        return None
 
 CommandFn = Callable[[], str | None]
 LogFn = Callable[[str, str], None]  # msg, level
@@ -98,10 +128,19 @@ class TelegramBot:
             self._emit(f"telegram: notify fail{tag} {preview}", "warn")
         return ok
 
+    def notify_down(self, reason: str) -> bool:
+        """Saída do processo — sem cooldown (kill duro não passa daqui)."""
+        return self.notify(
+            f"bot down · {reason} · uptime {self.uptime()}",
+            key="stop",
+            cooldown_s=0,
+        )
+
     def start(self) -> None:
         if not self.active or self._thread is not None:
             return
         self._last_ping = time.time()  # próximo autopping daqui a EveryHours
+        write_heartbeat()
         self._thread = threading.Thread(
             target=self._loop, name="telegram", daemon=True
         )
@@ -195,6 +234,7 @@ class TelegramBot:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            write_heartbeat()
             if (
                 self.autopping_hours > 0
                 and self.chat_id
@@ -250,4 +290,7 @@ if __name__ == "__main__":
     bot = TelegramBot("", active=True)
     assert bot.active is False
     assert bot.notify("x") is False
+    write_heartbeat()
+    age = heartbeat_age_s()
+    assert age is not None and age < 2
     print("telegram_notify ok")

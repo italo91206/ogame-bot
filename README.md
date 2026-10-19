@@ -77,7 +77,8 @@ python main.py
 
 - Abre Chrome/Chromium, faz login, entra no universo e sobe a TUI.
 - Captcha / login incompleto: resolva na janela do browser no desktop.
-- Teclas úteis no terminal: `b` = browser/inspect, `r` = reconfirm sessão.
+- Teclas: `b` browser/inspect · `w` workers (`↑↓` seleciona · `Space` on/off · `1-9`/`a`/`c..` atalho; grava `settings.json`) · `r` reconfirm · `l` logs.
+- Modo férias da conta (OGame): detectado no DOM — bot fica up, zero ticks, banner **FÉRIAS**; toggles de workers seguem ok.
 - `Ctrl+C` encerra (e avisa no Telegram se estiver ativo).
 
 Demo da TUI sem login:
@@ -152,7 +153,13 @@ Em `settings.json`:
 },
 "TelegramAutoPing": {
   "Active": true,
-  "EveryHours": 6
+  "EveryHours": 1
+},
+"TelegramWatchdog": {
+  "Active": true,
+  "StaleMinutes": 5,
+  "CheckEverySeconds": 30,
+  "AlertCooldownMinutes": 30
 }
 ```
 
@@ -183,6 +190,8 @@ Sem token ou com `TelegramMessenger.Active: false`, o Telegram fica no-op.
 | `/resume` | retoma (se não estiver em inspect/recover) |
 
 Auto-ping a cada `TelegramAutoPing.EveryHours` (se ativo).
+
+**Watchdog (morte imprevista):** o `main.py` sobe um processo detached `bot_watchdog.py` que monitora `logs/heartbeat`. Se o bot morrer sem avisar (Task Manager, crash duro, PC dormiu matando o Python), o watchdog manda Telegram após `TelegramWatchdog.StaleMinutes` (default 5). Manual: `python bot_watchdog.py`.
 
 ### Quando pedir login no desktop
 

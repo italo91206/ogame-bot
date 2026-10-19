@@ -115,7 +115,25 @@ Quando o recover cai em login completo / captcha, **manda** (key `login_captcha`
 
 ---
 
-### Etapa 4 — (Opcional) Endurecimento
+### Etapa 4 — Watchdog (morte imprevista) `done`
+
+Ctrl+C / crash Python com stack → `tg.notify_down` no `finally` do `main`.  
+Kill duro (Task Manager, console X, OOM) **não** roda `finally` → precisa processo externo:
+
+1. `main` escreve `logs/heartbeat` no loop Telegram.
+2. `bot_watchdog.py` (detached no boot, ou `python bot_watchdog.py`) lê o heartbeat.
+3. Se age > `TelegramWatchdog.StaleMinutes` → Telegram `bot morto · sem heartbeat…`.
+
+```json
+"TelegramWatchdog": {
+  "Active": true,
+  "StaleMinutes": 5,
+  "CheckEverySeconds": 30,
+  "AlertCooldownMinutes": 30
+}
+```
+
+### Etapa 5 — (Opcional) Endurecimento
 
 - Reinício automático do processo (Task Scheduler Windows) se o Python cair
 - Screenshot do browser no alerta de captcha (`sendPhoto`)

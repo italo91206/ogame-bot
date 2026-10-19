@@ -27,7 +27,13 @@
   },
   "TelegramAutoPing": {
     "Active": true,
-    "EveryHours": 6
+    "EveryHours": 1
+  },
+  "TelegramWatchdog": {
+    "Active": true,
+    "StaleMinutes": 5,
+    "CheckEverySeconds": 30,
+    "AlertCooldownMinutes": 30
   },
   "SleepMode": {
     "Active": false,
@@ -85,12 +91,14 @@
     "MinSecondaryToSend": 0,
     "SecondaryToPrimaryRatio": 0,
     "TopScore": 0,
-    "Origin": [{
-      "Galaxy": 1,
-      "System": 1,
-      "Position": 8,
-      "Type": "Planet"
-    }]
+    "Origin": [
+      {
+        "Galaxy": 1,
+        "System": 1,
+        "Position": 8,
+        "Type": "Planet"
+      }
+    ]
   },
   "AutoFarm": {
     "Active": false,
@@ -214,7 +222,7 @@
     },
     "AutoResearch": {
       "Active": true,
-      "Transports": { "Active": false },
+      "Transports": { "Active": true },
       "MaxEnergyTechnology": 20,
       "MaxLaserTechnology": 12,
       "MaxIonTechnology": 5,
