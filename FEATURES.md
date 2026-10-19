@@ -2,7 +2,7 @@
 
 Plano top-level para implementação futura. Features mapeadas do **TBot** (.NET + ogamed) para este projeto (Playwright / Python).
 
-Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 done**, **E02 T01+T02+T04+T05 done**, **E03 T01+T02+T04+T06+T08 done**, **E04 T01+T02 done** (Transports shared), **E05 core + T09+T10 done**, **E06 core + T04 done**, **E07 core + T04 done**, **E08 core done**, **E09 done**, **E10 done**, **E13 T01 done**, **E14 T01+T04 done** (DOIR priorities / E08 research transports / E04-T04 / E14 abandon+intensive ainda `todo`).
+Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 done**, **E02 T01+T02+T04+T05 done**, **E03 T01+T02+T04+T06+T08 done**, **E04 T01+T02+T04 done** (Transports + ArriveIn wake), **E05 core + T09+T10+T11 done**, **E06 core + T03+T04+T05 done**, **E07 core + T04+T05 done**, **E08 core + T05+T06 done**, **E09 done**, **E10 done**, **E13 T01 done**, **E14 T01+T04 done** (DOIR priorities / E14 abandon+intensive ainda `todo`).
 
 ---
 
@@ -14,11 +14,11 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | [E01](#e01--sleep-mode--fleet-save) | SleepMode / FleetSave `T01+T02+T03 done` | janela de sono, ghost fleet |
 | [E02](#e02--defender) | Defender `T01+T02+T04+T05+T09 done` | anti-ataque, evacuate, spy/msg |
 | [E03](#e03--expeditions) | Expeditions `T01+T02+T04+T06+T08 done` | manter slots de expo cheios |
-| [E04](#e04--brain--orquestração) | Brain (orquestração) `T02 done` | master switch + transports |
+| [E04](#e04--brain--orquestração) | Brain (orquestração) `T02+T04 done` | master switch + transports + ArriveIn |
 | [E05](#e05--brain--automine) | Brain · AutoMine `core + T09+T10 done` | minas/facilidades/lua (+ parity `todo`) |
-| [E06](#e06--brain--lifeform-automine) | Brain · Lifeform AutoMine `core done` | prédios LF |
+| [E06](#e06--brain--lifeform-automine) | Brain · Lifeform AutoMine `core + T03 done` | prédios LF + food/pop/T2/T3 |
 | [E07](#e07--brain--lifeform-autoresearch) | Brain · Lifeform AutoResearch `core done` | techs LF |
-| [E08](#e08--brain--autoresearch) | Brain · AutoResearch `core done` | pesquisas clássicas |
+| [E08](#e08--brain--autoresearch) | Brain · AutoResearch `core + T05+T06 done` | pesquisas clássicas + transports |
 | [E09](#e09--brain--autocargo) | Brain · AutoCargo `done` | construir cargos |
 | [E10](#e10--brain--autorepatriate) | Brain · AutoRepatriate `done` | recolher recursos |
 | [E11](#e11--brain--offer-of-the-day) | Brain · Offer of the Day | oferta diária trader |
@@ -116,7 +116,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E04-T01 | Master toggle | `done` | Ligar/desligar bloco Brain | `Brain.Active` |
 | E04-T02 | Transports shared | `done` | Enviar recursos faltantes do Origin; se Origin > storage×`OverflowFactor`, enche armazém do dest (`transports.py`); Origin/dest `Type` Moon ok; `DeutToLeave` sempre no Origin (≠ `DeutToLeaveOnMoons`) | `Brain.Transports.{Active,CargoType,DeutToLeave,RoundResources,OverflowFactor,Origin}` |
 | E04-T03 | Brain semaphore | `todo` | Garantir um job Brain por vez | — (runtime) |
-| E04-T04 | Drop / fleet wake | `todo` | Acordar Brain quando recurso chega cedo: `min(ETA prod, ArriveIn transport/deploy, BackIn expo/farm)`; Overview bump se `have ≥ cost` (TBot AutoMine já faz frota+expo; LF só transport). Hooks: **E00-T09**, **E03-T07**, **E12-T06** | — (API interna) |
+| E04-T04 | Drop / fleet wake | `done` | Pós-transport: next tick = `ArriveIn`+jitter (`transport_retry_wait`); wait de recurso = `min(ETA, ArriveIn)` (`clamp_wait_to_incoming`); Overview drop wake já em **E00-T09**. BackIn expo/farm → **E03-T07** / **E12-T06** | — (API interna) |
 
 ---
 
@@ -138,13 +138,13 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E05-T08 | DepositHours | `todo` | Storage preventivo (capacidade &lt; N h de prod), não só UI `on` | `DepositHours`, `BuildDepositIfFull` |
 | E05-T09 | Deut lua | `done` | Inflar custo/ETA/transport em luas: `cost.deut += DeutToLeaveOnMoons` (`automine._pad_moon_deut`); UI `on` + sem reserva → wait/transport | `DeutToLeaveOnMoons` |
 | E05-T10 | Transports hook | `done` | Pedir recursos ao Origin quando ETA impossível/lento | `AutoMine.Transports.Active` → **E04-T02** |
-| E05-T11 | Smart ticket drop | `todo` | Estender T04: `min(…, ArriveIn, BackIn expo/farm)` + wake Overview (**E04-T04**; parity TBot AutoMineCelestial) | — |
+| E05-T11 | Smart ticket drop | `done` | `min(ETA, ArriveIn)` + pós-send ArriveIn (**E04-T04**); BackIn expo/farm ainda via **E03-T07** / **E12-T06** | — |
 
 **vs TBot (não vira épico):** worker por celestial — nosso 1 worker varre todos + `min(wait)`; ok até multi-planet doer. ETA prod já existe; frota/expo/drop = **E05-T11** / **E04-T04**. Abandonar colônia = E14, não AutoMine.
 
 ---
 
-## E06 — Brain · Lifeform AutoMine `core + T04 done`
+## E06 — Brain · Lifeform AutoMine `core + T03+T04 done`
 
 **O que é:** upgrade de prédios Lifeform.  
 **O que faz (TBot):** food/pop/starving/T2/T3 + cheapest ConvertedDeut; transports.  
@@ -154,9 +154,9 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 |----|------|--------|-------|-------------------|
 | E06-T01 | Gate + caps | `done` | Threshold + max levels por slot | `StartFromCrystalMineLvl`, `MaxBasePopulationBuilding`, `MaxBaseFoodBuilding`, `MaxBaseTechBuilding`, `MaxT2Building`, `MaxT3Building`, `MaxBuilding6..12` |
 | E06-T02 | Regras core | `done` | Exclude, prevent expensive, interval, smart ticket | `Active`, `Exclude[]`, `PreventIfMoreExpensiveThanNextMine`, `CheckIntervalMin/Max` |
-| E06-T03 | Food/pop/T2/T3 | `todo` | Starving / living space / NeedsMoreT2/T3 (TBot full pick) | — |
+| E06-T03 | Food/pop/T2/T3 | `done` | Parse `#population_box` → starving/willStarve → food (slot2); foodForMore/full → pop (slot1); NeedsMoreT2/T3 → slots 4/5; else cheapest ≥1. Sem peek ConvertedDeut / living-space cost do TBot | — |
 | E06-T04 | Transports hook | `done` | Pedir recursos ao Origin | `Transports.Active` → **E04-T02** |
-| E06-T05 | Smart ticket drop | `todo` | Reusar **E04-T04** (TBot LF só transport; nós + expo/farm/Overview) | — |
+| E06-T05 | Smart ticket drop | `done` | Reusar **E04-T04** ArriveIn | — |
 
 ---
 
@@ -172,7 +172,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E07-T02 | Regras core | `done` | Exclude, interval, smart ticket | `Active`, `Exclude[]`, `CheckIntervalMin/Max` |
 | E07-T03 | Cheaper swap | `todo` | `GetLessExpensiveLFTechToBuild` via peek custos | — |
 | E07-T04 | Transports hook | `done` | Pedir recursos ao Origin | `Transports.Active` → **E04-T02** |
-| E07-T05 | Smart ticket drop | `todo` | Reusar **E04-T04** | — |
+| E07-T05 | Smart ticket drop | `done` | Reusar **E04-T04** ArriveIn | — |
 
 ---
 
@@ -188,8 +188,8 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E08-T02 | Prioridades core | `done` | `OptimizeForStart` + `EnsureExpoSlots` + cheapest ConvertedDeuterium | `OptimizeForStart`, `EnsureExpoSlots` |
 | E08-T03 | Escopo + smart ticket | `done` | Target / maior lab; next = min(countdown, ETA cap `CheckIntervalMax`, else intervalo) | `Active`, `Target`, `CheckIntervalMin/Max` |
 | E08-T04 | Prioridades DOIR | `todo` | Plasma/Astro/Energy via DOIR + IRN se mais rápido (TBot worker) | `PrioritizeAstrophysics`, `PrioritizePlasmaTechnology`, `PrioritizeEnergyTechnology`, `PrioritizeIntergalacticResearchNetwork` |
-| E08-T05 | Transports hook | `todo` | Pedir recursos ao Origin quando faltar | `AutoResearch.Transports.Active` → **E04-T02** |
-| E08-T06 | Smart ticket drop | `todo` | Reusar **E04-T04** (mesmo critério do AutoMine) | — |
+| E08-T05 | Transports hook | `done` | Pedir recursos ao Origin quando faltar | `AutoResearch.Transports.Active` → **E04-T02** |
+| E08-T06 | Smart ticket drop | `done` | Reusar **E04-T04** ArriveIn | — |
 
 ---
 
@@ -293,7 +293,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | ID | Task | O quê | Configurabilidade |
 |----|------|-------|-------------------|
 | E16-T01 | Multi-instance | Várias contas / aliases | `settings.json` → `Instances[].{Alias,Settings}` |
-| E16-T02 | Telegram | Alertas + `/ping` `/status` `/pause` `/resume` + login/captcha (`doing`, `telegram_notify.py`) | `TelegramMessenger` / `TelegramAutoPing` + `.env` — `docs/TELEGRAM_REMOTE.md` |
+| E16-T02 | Telegram | Alertas + comandos + `notify_down` + heartbeat/`bot_watchdog.py` (`doing`) | `TelegramMessenger` / `TelegramAutoPing` / `TelegramWatchdog` + `.env` — `docs/TELEGRAM_REMOTE.md` |
 | E16-T03 | WebUI | Editar settings + logs | `WebUI.{Enable,Urls,MaxLogsToShow}` |
 | E16-T04 | Proxy outbound | HTTP/SOCKS5 | `General.Proxy.{Enabled,Address,Type,Username,Password,LoginOnly}` |
 | E16-T05 | Fleet helpers manuais | Deploy/ghost/jumpgate/auction via comando | comandos Telegram (não worker timed) |

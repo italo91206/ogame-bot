@@ -56,6 +56,7 @@ def destinations(origin: Coords, n_systems: int = N_SYSTEMS) -> list[Coords]:
         Coords(g, s, p, "Planet")
         for s in range(1, int(n_systems) + 1)
         for p in range(1, 16)
+        if not (s == origin.system and p == origin.position)
     ]
     random.shuffle(dests)
     dests.sort(key=lambda c: ogame_distance(origin, c))

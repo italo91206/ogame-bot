@@ -22,7 +22,12 @@ from game import (
     switch_celestial,
 )
 from runtime import Worker, pick_schedule, schedule_why
-from features.transports import send_miner_transport, transports_enabled
+from features.transports import (
+    clamp_wait_to_incoming,
+    send_miner_transport,
+    transport_retry_wait,
+    transports_enabled,
+)
 
 
 def is_lf_tech(tid: int) -> bool:
@@ -162,14 +167,18 @@ def lf_research_celestial(
                 tr = send_miner_transport(
                     page, brain, celestial, cost, leave_slots=leave_slots
                 )
-                if tr.startswith("ok"):
+                if tr.startswith("ok") or tr == "incoming":
+                    twait, tsched = transport_retry_wait(page, celestial)
                     return (
                         f"transport LFtech#{want}",
-                        random.uniform(60, 120),
-                        f"transport → LFtech#{want}→{nxt}",
+                        twait,
+                        tsched or f"transport → LFtech#{want}→{nxt}",
                         f"transport {tr} p/ LFtech#{want}→{nxt}",
                     )
                 detail = f"{detail}; transport: {tr}"
+        wait, arr = clamp_wait_to_incoming(page, celestial, wait)
+        if arr:
+            sched = arr
         return f"wait LFtech#{want}", wait, sched, detail
 
     cost = peek_tech_costs(page, tid) or {}

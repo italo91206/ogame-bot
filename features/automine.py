@@ -36,7 +36,12 @@ from game import (
 )
 from game.tech import build_ships
 from runtime import Worker, pick_schedule, schedule_why
-from features.transports import send_miner_transport, transports_enabled
+from features.transports import (
+    clamp_wait_to_incoming,
+    send_miner_transport,
+    transport_retry_wait,
+    transports_enabled,
+)
 
 _fmt_cost = format_cost
 
@@ -190,11 +195,12 @@ def _mine_sats(
                 tr = send_miner_transport(
                     page, brain, celestial, total, leave_slots=leave_slots
                 )
-                if tr.startswith("ok"):
+                if tr.startswith("ok") or tr == "incoming":
+                    twait, tsched = transport_retry_wait(page, celestial)
                     return (
                         f"transport {n}xSat",
-                        random.uniform(60, 120),
-                        f"transport → {n} sats",
+                        twait,
+                        tsched or f"transport → {n} sats",
                         f"transport {tr} p/ {n} sats [{why}]",
                     )
         wait = (
@@ -202,7 +208,8 @@ def _mine_sats(
             if eta is not None
             else None
         )
-        sched = f"faltam recursos ({n} sats)"
+        wait, arr = clamp_wait_to_incoming(page, celestial, wait)
+        sched = arr or f"faltam recursos ({n} sats)"
         return (
             f"wait {n}xSat",
             wait,
@@ -296,15 +303,19 @@ def mine_celestial(
                 tr = send_miner_transport(
                     page, brain, celestial, cost, leave_slots=leave_slots
                 )
-                if tr.startswith("ok"):
+                if tr.startswith("ok") or tr == "incoming":
                     lab = label(want)
+                    twait, tsched = transport_retry_wait(page, celestial)
                     return (
                         f"transport {NAMES.get(want, want)}",
-                        random.uniform(60, 120),
-                        f"transport → {lab}→{nxt}",
+                        twait,
+                        tsched or f"transport → {lab}→{nxt}",
                         f"transport {tr} p/ {lab}→{nxt} [{why}]",
                     )
                 detail = f"{detail}; transport: {tr}"
+        wait, arr = clamp_wait_to_incoming(page, celestial, wait)
+        if arr:
+            sched = arr
         return (
             f"wait {NAMES.get(want, want)}",
             wait,

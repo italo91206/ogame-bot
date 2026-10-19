@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import random
 
 from game import (
     Celestial,
@@ -21,6 +22,7 @@ from game.fleet import (
     has_incoming_transport,
     parse_ships,
     send_fleet,
+    transport_arrive_in,
 )
 from runtime import slots_available
 
@@ -93,6 +95,46 @@ def transports_enabled(brain: dict, feature_cfg: dict) -> bool:
     t = brain.get("Transports") or {}
     ft = feature_cfg.get("Transports") or {}
     return bool(brain.get("Active") and t.get("Active") and ft.get("Active"))
+
+
+def transport_retry_wait(
+    page,
+    dest: Celestial,
+    *,
+    fallback_lo: float = 60.0,
+    fallback_hi: float = 120.0,
+) -> tuple[float, str]:
+    """E04-T04: next tick = ArriveIn + jitter (TBot after HandleMinerTransport)."""
+    eta = transport_arrive_in(
+        page,
+        dest.coords.galaxy,
+        dest.coords.system,
+        dest.coords.position,
+        moon=dest.coords.type == "Moon",
+    )
+    if eta is not None and eta > 0:
+        wait = eta + random.uniform(5, 20)
+        return wait, f"ArriveIn {eta:.0f}s"
+    return random.uniform(fallback_lo, fallback_hi), "transport enviado"
+
+
+def clamp_wait_to_incoming(
+    page, dest: Celestial, wait: float | None
+) -> tuple[float | None, str | None]:
+    """min(ETA prod, ArriveIn) when a transport is already flying in."""
+    eta = transport_arrive_in(
+        page,
+        dest.coords.galaxy,
+        dest.coords.system,
+        dest.coords.position,
+        moon=dest.coords.type == "Moon",
+    )
+    if eta is None or eta <= 0:
+        return wait, None
+    jittered = eta + random.uniform(5, 20)
+    if wait is None or wait > jittered:
+        return jittered, f"ArriveIn {eta:.0f}s"
+    return wait, None
 
 
 def send_miner_transport(

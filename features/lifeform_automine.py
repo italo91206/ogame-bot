@@ -7,6 +7,7 @@ from typing import Any
 
 from game import (
     Celestial,
+    Population,
     Tech,
     build_technology,
     building_queue,
@@ -18,6 +19,7 @@ from game import (
     parse_celestials,
     format_cost,
     parse_ogame_int,
+    parse_population,
     parse_technologies,
     peek_tech_costs,
     resource_production_per_hour,
@@ -25,7 +27,12 @@ from game import (
     switch_celestial,
 )
 from runtime import Worker, pick_schedule, schedule_why
-from features.transports import send_miner_transport, transports_enabled
+from features.transports import (
+    clamp_wait_to_incoming,
+    send_miner_transport,
+    transport_retry_wait,
+    transports_enabled,
+)
 
 CRYSTAL = 2
 ROBOTS, NANITES = 14, 15
@@ -86,25 +93,77 @@ def _excluded(c: Celestial, exclude: list) -> bool:
     return False
 
 
+def _slot_tech(techs: dict[int, Tech], slot: int) -> Tech | None:
+    for t in techs.values():
+        if is_lf_building(t.id) and slot_of(t.id) == slot:
+            return t
+    return None
+
+
+def _cand_ok(
+    t: Tech,
+    cfg: dict,
+    *,
+    afford: bool,
+    prevent_tech: bool,
+    min_level: int = 1,
+) -> bool:
+    if not is_lf_building(t.id) or t.level < min_level:
+        return False
+    if not under_cap(t.id, t.level, cfg):
+        return False
+    if prevent_tech and slot_of(t.id) == 3:
+        return False
+    if afford:
+        return t.status == "on"
+    return t.status in ("on", "disabled")
+
+
 def pick_next(
     techs: dict[int, Tech],
     cfg: dict,
     *,
     afford: bool = True,
     prevent_tech: bool = False,
+    pop: Population | None = None,
+    energy: int = 0,
 ) -> int | None:
-    """Cheapest-by-level among LF buildings already ≥1 under cap."""
+    """E06-T03: food/pop/T2/T3 priorities (TBot), else cheapest ≥1 by level."""
 
-    def ok(t: Tech) -> bool:
-        if not is_lf_building(t.id) or t.level < 1 or not under_cap(t.id, t.level, cfg):
-            return False
-        if prevent_tech and slot_of(t.id) == 3:
-            return False
-        if afford:
-            return t.status == "on"
-        return t.status in ("on", "disabled")
+    def try_slot(slot: int, *, min_level: int = 0) -> int | None:
+        t = _slot_tech(techs, slot)
+        if t is None:
+            return None
+        if _cand_ok(
+            t, cfg, afford=afford, prevent_tech=prevent_tech, min_level=min_level
+        ):
+            return t.id
+        return None
 
-    cands = [t for t in techs.values() if ok(t)]
+    if pop is not None:
+        # food (slot 2) when starving / will starve; skip if no energy headroom
+        if (pop.is_starving() or pop.will_starve()) and energy >= 0:
+            hit = try_slot(2)
+            if hit is not None:
+                return hit
+        if pop.food_for_more() or pop.is_full():
+            hit = try_slot(1)
+            if hit is not None:
+                return hit
+        if pop.needs_more_t2():
+            hit = try_slot(4)
+            if hit is not None:
+                return hit
+        if pop.needs_more_t3():
+            hit = try_slot(5)
+            if hit is not None:
+                return hit
+
+    cands = [
+        t
+        for t in techs.values()
+        if _cand_ok(t, cfg, afford=afford, prevent_tech=prevent_tech, min_level=1)
+    ]
     if not cands:
         return None
     # ponytail: level asc instead of ConvertedDeuterium; peek-all when ROI matters
@@ -215,13 +274,26 @@ def lf_mine_celestial(
         return busy
 
     techs = parse_technologies(page)
-    if not any(is_lf_building(t.id) and t.level >= 1 for t in techs.values()):
+    pop = parse_population(page)
+    energy = parse_ogame_int(current_resources(page).get("energy", "0"))
+    has_lf = any(is_lf_building(t.id) and t.level >= 1 for t in techs.values())
+    # prio food/pop may target level-0 slots when pop stats need them
+    if not has_lf and pop is None:
         return None, None, "sem LF", "sem lifeform / prédios ≥1"
 
     prevent_tech = lf_research_queue(page)[0] != 0
-    tid = pick_next(techs, cfg, prevent_tech=prevent_tech)
+    tid = pick_next(
+        techs, cfg, prevent_tech=prevent_tech, pop=pop, energy=energy
+    )
     if tid is None:
-        want = pick_next(techs, cfg, afford=False, prevent_tech=prevent_tech)
+        want = pick_next(
+            techs,
+            cfg,
+            afford=False,
+            prevent_tech=prevent_tech,
+            pop=pop,
+            energy=energy,
+        )
         if want is None:
             return None, None, "nada sob cap", "nada sob cap / affordável"
         nxt = techs[want].level + 1
@@ -236,14 +308,18 @@ def lf_mine_celestial(
                 tr = send_miner_transport(
                     page, brain, celestial, cost, leave_slots=leave_slots
                 )
-                if tr.startswith("ok"):
+                if tr.startswith("ok") or tr == "incoming":
+                    twait, tsched = transport_retry_wait(page, celestial)
                     return (
                         f"transport LF#{want}",
-                        random.uniform(60, 120),
-                        f"transport → LF#{want}→{nxt}",
+                        twait,
+                        tsched or f"transport → LF#{want}→{nxt}",
                         f"transport {tr} p/ LF#{want}→{nxt}",
                     )
                 detail = f"{detail}; transport: {tr}"
+        wait, arr = clamp_wait_to_incoming(page, celestial, wait)
+        if arr:
+            sched = arr
         return f"wait LF#{want}", wait, sched, detail
 
     cost = peek_tech_costs(page, tid) or {}
@@ -386,4 +462,17 @@ if __name__ == "__main__":
     assert not under_cap(11101, 60, cfg)
     assert converted_deut({"metal": 250, "crystal": 150, "deut": 10}) == 210
     assert is_lf_building(11101) and not is_lf_building(1)
+    # E06-T03: starving → food (slot 2) even if higher level than others
+    starving = Population(available=500, satisfied=100, living_space=900, hungry=12)
+    assert pick_next(techs, cfg, pop=starving, energy=10) == 11102
+    # food for more (and not will_starve) → population (slot 1)
+    feed = Population(available=210, satisfied=590, living_space=500)
+    assert pick_next(techs, cfg, pop=feed, energy=10) == 11101
+    # T2: pop at cap so is_full doesn't steal; food not needed
+    techs[11104] = Tech(11104, 1, "on")
+    need_t2 = Population(
+        available=200, satisfied=200, living_space=200, t2=0, hungry=0
+    )
+    cfg_pop_cap = {**cfg, "MaxBasePopulationBuilding": 10}  # 11101 lvl10 → capped
+    assert pick_next(techs, cfg_pop_cap, pop=need_t2, energy=10) == 11104
     print("lifeform_automine ok")
