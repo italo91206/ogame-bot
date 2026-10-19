@@ -25,7 +25,7 @@ _NORM_RE = re.compile(
 SHORTCUTS_RUN = "b browser · w workers · l logs · r reconfirm · Ctrl+C sair"
 SHORTCUTS_INSPECT = "b voltar ao bot · w workers · l logs · Ctrl+C sair"
 SHORTCUTS_LOGS = "l  fechar logs → overview"
-SHORTCUTS_WORKERS = "w  fechar workers → overview"
+SHORTCUTS_WORKERS = "↑↓ navegar · Space on/off · 1-9/a/c.. · w fechar"
 
 _ACCENT = "cyan"
 _BORDER = "dark_cyan"
@@ -80,6 +80,8 @@ class BotTUI:
     log_tail: list[str] = field(default_factory=list)
     under_attack: str = ""  # detalhe; vazio = safe
     under_attack_n: int = 0  # qtd de ameaças ativas
+    vacation: bool = False
+    worker_sel: int = 0  # índice destacado na view workers
     _console: Console = field(default_factory=lambda: Console(stderr=False))
     _last_key: str = field(default="", repr=False)
     _last_repeat: int = field(default=0, repr=False)
@@ -152,6 +154,7 @@ class BotTUI:
 
     def set_workers(self, rows: list[WorkerRow]) -> None:
         self.workers = rows
+        self._clamp_worker_sel()
 
     def show_log_tail(self, n: int = 50) -> None:
         self.log_tail = filelog.tail(n)
@@ -161,10 +164,24 @@ class BotTUI:
     def show_workers(self) -> None:
         self.view = "workers"
         self.shortcuts = SHORTCUTS_WORKERS
+        self._clamp_worker_sel()
 
     def hide_overlay(self, shortcuts: str = SHORTCUTS_RUN) -> None:
         self.view = "dash"
         self.shortcuts = shortcuts
+
+    def _clamp_worker_sel(self) -> None:
+        n = len(self.workers)
+        if n <= 0:
+            self.worker_sel = 0
+        else:
+            self.worker_sel = max(0, min(self.worker_sel, n - 1))
+
+    def move_worker_sel(self, delta: int) -> None:
+        if not self.workers:
+            self.worker_sel = 0
+            return
+        self.worker_sel = (self.worker_sel + delta) % len(self.workers)
 
     def hide_log_tail(self, shortcuts: str = SHORTCUTS_RUN) -> None:
         self.hide_overlay(shortcuts)
@@ -186,6 +203,8 @@ class BotTUI:
             (f" {self.universe.upper()} ", "bold white on dark_cyan"),
             (status_txt, status_style),
         ]
+        if self.vacation:
+            parts.append((" │ FÉRIAS ", "bold black on yellow"))
         if self.health:
             parts.append((f" │ {self.health} ", h_style))
         if tag:
@@ -273,21 +292,35 @@ class BotTUI:
         )
 
     def _workers_table(self) -> Table:
+        from control import ACTIVE_PATH, index_key
+
         wt = Table(expand=True, box=None, padding=(0, 1))
+        wt.add_column("#", style="dim", justify="right")
         wt.add_column("Worker", style="bold")
         wt.add_column("Estado")
         wt.add_column("Próximo")
         wt.add_column("Motivo")
         color = {"running": "green", "waiting": "yellow", "idle": "dim", "off": "red"}
         if not self.workers:
-            wt.add_row("—", "off", "-", "nenhum worker")
+            wt.add_row("—", "—", "off", "-", "nenhum worker")
         else:
-            for w in self.workers:
+            for i, w in enumerate(self.workers):
+                key = index_key(i) if w.name in ACTIVE_PATH else "·"
+                sel = i == self.worker_sel
+                mark = "▸" if sel else " "
+                row_style = f"bold white on {_BORDER}" if sel else None
+                state_style = (
+                    f"bold white on {_BORDER}"
+                    if sel
+                    else color.get(w.state, "white")
+                )
                 wt.add_row(
-                    w.name,
-                    Text(w.state, style=color.get(w.state, "white")),
-                    w.next_in,
-                    w.reason,
+                    Text(f"{mark}{key}", style=row_style or "dim"),
+                    Text(w.name, style=row_style or "bold"),
+                    Text(w.state, style=state_style),
+                    Text(w.next_in, style=row_style),
+                    Text(w.reason, style=row_style),
+                    style=row_style,
                 )
         return wt
 
@@ -320,7 +353,13 @@ class BotTUI:
         return Group(*parts)
 
     def _render_workers_view(self):
-        parts: list = [self._header(f"WORKERS {len(self.workers)} · W sai")]
+        n = len(self.workers)
+        cur = (
+            self.workers[self.worker_sel].name
+            if n and 0 <= self.worker_sel < n
+            else "—"
+        )
+        parts: list = [self._header(f"WORKERS {n} · {cur} · W sai")]
         ban = self._attack_banner()
         if ban is not None:
             parts.append(ban)
@@ -409,6 +448,11 @@ def demo() -> None:
 
     t.show_workers()
     assert t.view == "workers"
+    assert t.worker_sel == 0
+    t.move_worker_sel(1)
+    assert t.worker_sel == 1
+    t.move_worker_sel(-1)
+    assert t.worker_sel == 0
     t.hide_overlay()
     assert t.view == "dash"
 

@@ -1,173 +1,181 @@
-# FOCUS.md — estado local, ponte de controle e agente (rascunho)
+# FOCUS.md — perfis de workers (rascunho)
 
-Notas para o futuro. Não é épico em [`FEATURES.md`](../FEATURES.md) ainda.  
-Workers continuam scripts determinísticos; “inteligência” e intenção humana entram **acima** deles, via ponte — não no `tick`.
+Não é épico em [`FEATURES.md`](../FEATURES.md) ainda.  
+Workers continuam scripts determinísticos. Focus **não** decide o que construir nem clica no jogo — só aplica um **pacote de settings** (Active / subtoggles / leaves).
 
 Guia Telegram (transporte): [`TELEGRAM_REMOTE.md`](TELEGRAM_REMOTE.md).
 
 ---
 
-## Problema
+## Definição
 
-Cada worker otimiza o próprio tick (expo enche frota, Brain gasta recurso, Colonize espera slot).  
-Do lado humano a pergunta é outra: *qual é o foco agora?* (farm / construir / guerra / colonizar) — e *o que o bot sabe do universo sem reabrir o DOM?*
+**Focus = perfil do bot** (nome + preset de workers e sub-módulos).
 
-Hoje:
+Espelho mental: SleepMode já “mata” features por janela de tempo; Focus faz o mesmo por **intenção humana** (`normal`, `guerra`, `férias`, …).
 
-- ligar/desligar é manual (`Active`, leaves, SleepMode, IsolateExpeditions)
-- status “verdadeiro” exige parse Playwright de novo
-- atalhos de terminal e Telegram (E16) tendem a virar caminhos paralelos se não houver um contrato comum
+| Faz | Não faz |
+|-----|---------|
+| Ligar/desligar workers e subtoggles de uma vez | Política de mina/pesquisa / “o que upar” |
+| Gravar o pacote via ponte → `settings.json` | DOM / Playwright |
+| Sinalizar o modo ativo na TUI / log | LLM, world-state cache, scheduler global |
 
----
+Aplicar: `focus_apply(modo)` ← Telegram `/focus guerra` **e/ou** comando no terminal; hot-reload se o preset gravar settings. Um contrato → N transportes (`control.py` já é a semente).
 
-## Princípio
-
-| Camada | Faz | Não faz |
-|--------|-----|---------|
-| `game/` + workers + Runtime | Parse/click, regras, slots, agenda | Escolher estratégia; falar com humano/LLM |
-| **World state** | Cache local + diff do que o bot já viu | Ser verdade absoluta sem revalidar |
-| **Ponte de controle** | Ops tipadas (status, toggle, focus, …) | DOM direto; política de mina/pesquisa |
-| Focus / presets | Pacotes de settings via ponte | Clicar no jogo |
-| Transportes (Telegram + terminal) | Entregar a mesma ponte ao humano | Lógica de jogo própria |
-| Agente (opcional) | Intenção → lê state → chama ponte | Substituir workers no loop |
-
-LLM **fora** do tick. Bot de fundo nunca depende de modelo pra até a próxima mina.  
-Agente / humano **nunca** recebem `Page` — só state + ponte.
-
-### Transportes (simultâneos)
-
-- **Telegram** = meio de comunicação **principal** (remoto, alertas, comandos).
-- **Terminal** (TUI / teclas / stdin) = meio **local** equivalente, no mesmo processo.
-- Os dois ficam **ativos ao mesmo tempo**: um comando no Telegram não bloqueia atalho no terminal, e vice-versa.
-- Ambos só chamam a **mesma ponte**; não duplicar “set Active” em três sítios (TUI vs Telegram vs hot-reload ad hoc).
-- Hot-reload de `settings.json` continua válido; a ponte é a API preferida para mutações sob demanda.
+**Não aprofundar além do preset** até doer. World state / agente ficam fora do caminho crítico (ver [Depois, se doer](#depois-se-doer)).
 
 ---
 
-## Fase 0 — World state (prioridade)
+## Modos
 
-Cache local (memória; dump JSON opcional para inspeção/agente) atualizado como **efeito colateral** de parses/ações bem-sucedidas em `game/` (overview, filas, fleets, resources, …).
+Nomes TBD (`Focus` vs `Brain.Mode` — um campo só). Conteúdo dos presets é tabela ↔ chaves reais do `settings.json`.
 
-Fatias mínimas (TBD fino):
+### `normal` (default operacional)
 
-| Fatia | Conteúdo típico |
-|-------|-----------------|
-| celestials | lista + tipo + coords |
-| resources | metal/cristal/deut (+ produção se houver) **por planeta/lua** |
-| fleets | estacionada **por celestial** + em voo (missão, ETA, origem/destino) |
-| queues | build / research / shipyard (+ ETA) |
-| slots | livres / total / leaves efetivos |
-| techs / buildings | níveis já lidos (quando o worker/parse trouxe) |
-| meta | `updated_at` por fatia, fonte do último write, staleness |
+Rotina atual: o que o humano já configurou como “dia a dia” (AutoMine / AutoResearch / transports / Expeditions / etc. conforme `settings.json`).
 
-**Diff curto** (janela pequena, não event-sourcing): o que mudou desde o último snapshot — para LLM/humano não relerem o mundo inteiro.
+Focus `normal` **não** inventa uma economia nova — restaura / mantém o pacote “padrão” definido pelo usuário (ver `Focus.Default` abaixo).
 
-Regras:
+### `guerra`
 
-- Writers claros (após parse/ação OK); merge por fatia, não “um blob opaco”.
-- State é aproximado; **ação crítica** (enviar frota, click destrutivo) revalida no `game/` se a fatia estiver stale ou se o op exigir verdade fresca.
-- Readers baratos: TUI, `/status`, agente, decisões de *config* — sem DOM.
+Humano está ativo no jogo; o bot **não compete** por recursos nem slots, mas mantém **vigilância** do império.
 
----
+| Peça | Esperado |
+|------|----------|
+| Spenders (mine, research, LF, expo, colonize, discovery, farm, harvest, cargo, repatriate, transports, …) | **off** |
+| Slots | livres para o humano (`SlotsToLeaveFree` alto / spenders off) |
+| `Defender.Active` | **on** |
+| `Defender` notify / Alarm / Telegram | **on** (avisos) |
+| `Defender.Autofleet` | **off** — sem evac automática |
+| `SleepMode` / `AutoFleetSave` | **off** — não mexer na frota por sono |
 
-## Fase 1 — Ponte de controle
+Subentendido: você joga; o bot só checa segurança e notifica.
 
-Módulo (nome TBD: `bridge/` / `control/`) = catálogo de funções tipadas, cada uma com:
+### `férias`
 
-- nome + **descritivo** (texto estável → futuro tool-schema do agente)
-- inputs / outputs
-- risco: `read` | `config` | `fleet` | `destructive`
-- fonte: `state` | `state+fresh-DOM` | só DOM
-- side effects (grava `settings.json`? wake worker? notifica?)
+Dois caminhos, **mesmo efeito** no Runtime:
 
-Ops iniciais (exemplos, não API final):
+1. **Inferido pelo DOM** — bot detecta modo férias OGame (`game/vacation.py` / `#advice-bar`).
+2. **Preset manual** — `/focus férias` (ou equivalente): pacote vazio (todos os workers off).
 
-| Op | Risco | Notas |
-|----|-------|-------|
-| `status` / `state_get` | read | lê world state (+ diff opcional); sem parse |
-| `worker_list` | read | Active, next_in, reason (espelho TUI) |
-| `worker_set_active` | config | liga/desliga worker sob demanda |
-| `focus_apply` | config | aplica preset (Fase 2) |
-| `settings_get` / patch pontual | config | o que o humano já faria no JSON |
-| comandos sessão (`pause` / `resume` / …) | config | alinhar com E16 / terminal |
+Comportamento:
 
-Um contrato → N transportes. Novos comandos Telegram ou teclas = thin wrappers.
+- Processo **continua up** (sessão, TUI, Telegram, watchdog).
+- **Todos** os workers em off → nenhum tick de feature gasta recurso / envia frota.
+- Flag explícita na TUI **e** no log: `modo férias ativado` (hoje: `ctx["vacation"]` + banner TUI; unificar mensagem).
+- Runtime: gate que bloqueia ticks enquanto férias estiver ativo (seed: `runtime.py` + `ctx["vacation"]`).
 
----
+#### Entrada
 
-## Fase 2 — Focus preset (burro e estável)
+| Fonte | Ação |
+|-------|------|
+| DOM: férias **liga** | aplicar preset `férias` (workers off) + flag TUI/log; persistir Active=false via ponte |
+| Comando humano `/focus férias` | idem (preset vazio) |
 
-Campo tipo `Focus: passive | farm | war | build | colonize` (nome TBD) que só aplica um **pacote** de settings **via ponte**.
+#### Saída (só via DOM, se o bot segue rodando)
 
-Exemplos (ajustar depois; não congelar nomes cedo):
+Quando o DOM indicar que **saiu** do modo férias OGame:
 
-| Focus | Expo | Colonize | Brain mine/research | Leave Expo | Notas |
-|-------|------|----------|---------------------|------------|-------|
-| `passive` / farm | on | off/low | on leve | alto (2+) | maximiza expo + economia |
-| `colonize` | leave alto | on | on | 2–3 | headroom de frota |
-| `build` | leave alto | off | on pleno | 2+ | prioriza filas / transports |
-| `war` | off ou mínimo | off | mines off/low | — | cargos/defesa; frota livre |
+- limpar flag `modo férias ativado`
+- aplicar o **modo padrão pós-férias** (`Focus.Default`, nome TBD) — **não** deixar settings “como ficou” no escuro
+- default sugerido: `normal` (passivo / rotina); valor **configurável** pelo usuário
 
-Espelho mental: SleepMode já “mata” features por janela — Focus é o mesmo padrão, semântico.  
-Aplicar: ponte (`focus_apply`) ← Telegram `/focus war` **e/ou** atalho/comando no terminal; hot-reload se o preset gravar `settings.json`.
+Exemplo de config (rascunho de chave):
 
----
+```json
+"Focus": {
+  "Current": "normal",
+  "Default": "normal"
+}
+```
 
-## Fase 3 — Brain mais esperto (ainda determinístico)
+`Default` = para onde voltar ao sair do férias DOM (e, se útil, ao boot sem Current).  
+Ainda aberto: se `/focus férias` manual deve ser “preso” até comando humano, ou o DOM manda sempre.
 
-Já no plano FEATURES; não precisa de IA. Ponteiro, não duplicar tasks aqui:
+#### Seed já feito (sem Focus completo)
 
-- leave por feature (Expo vs General) — **feito**
-- wake drop / frota → Brain (`E04-T04`, `E03-T07`, …)
-- DOIR / prioridades research (`E05-T05`, `E08-T04`)
-
-Focus escolhe *o que* pode correr; estas tasks escolhem *o que construir* dentro do foco.
+- Percepção DOM: `game/vacation.py`
+- Desliga workers: `control.disable_all_for_vacation` + grava settings
+- Gate: `ctx["vacation"]` → Runtime não agenda ticks de feature
+- **Gap vs este doc:** ao sair do férias OGame hoje **não** restaura `Focus.Default` — só limpa o gate; Active dos workers ficam false até toggle manual / futuro `focus_apply(Default)`
 
 ---
 
-## Fase 4 — Agente por cima
+## Tabela-alvo (rascunho; ajustar chaves)
 
-Intenção humana (“vou atacar X”, “só farmar”) → agente:
+| Chave / worker | `normal` | `guerra` | `férias` |
+|----------------|----------|----------|----------|
+| Spenders (Brain mine/research/LF, Expo, Colonize, Discovery, Farm, Harvest, Cargo, Repatriate, Transports, …) | conforme pacote default do user | off | off |
+| `Defender.Active` | conforme default | on | off |
+| `Defender.Autofleet.Active` | conforme default | **off** | off |
+| `Defender` Alarm / Telegram | conforme default | on | off |
+| `SleepMode` / AutoFleetSave | conforme default | off | off |
+| Flag TUI/log férias | — | — | `modo férias ativado` |
 
-1. Lê **world state / diff** (não parseia DOM)
-2. Escolhe ou compõe preset / toggles
-3. Chama a **mesma ponte** que Telegram e terminal
-4. Confirma ações `destructive` (ataque, abandon, cancelar filas)
+`normal` = snapshot/pacote nomeado do que o user considera rotina — não “tudo on”.
 
-“Matar filas” = `Active: false` nos workers + (se um dia existir) cancel de builds/research — não é o LLM jogando OGame.
+---
 
-Contrato do agente: **só lê state e chama a ponte**; Runtime/Playwright continuam donos do DOM.
+## Ponte mínima
+
+Já existe semente em `control.py` (toggle Active, vacation disable-all).
+
+Ops Focus:
+
+| Op | Notas |
+|----|-------|
+| `focus_apply(modo)` | aplica tabela do modo; grava settings; atualiza `Focus.Current` |
+| `focus_get` | Current + Default + se DOM férias |
+| toggles pontuais | continuam; durante `férias` DOM: TBD se override humano é respeitado ou re-aplicado no próximo refresh |
+
+Telegram + terminal chamam a **mesma** op — sem fork de lógica.
 
 ---
 
 ## Fora de escopo (de propósito)
 
-- LLM em todo `Worker.tick`
-- Agente com `Page` / seletor CSS
-- Um “super Brain” que reimplementa expo/mina
-- Parar o bot pra “ficar agêntico”
-- Scheduler de prioridade global complexo antes de state + ponte + Focus
-- Event sourcing / DB / MCP completo / WebUI como pré-requisito
-- Workers confiando *só* em cache para enviar frota sem revalidar quando preciso
+- LLM / agente escolhendo o que upar
+- World-state cache como pré-requisito do Focus
+- Scheduler de prioridade global
+- Focus que “joga guerra” (ataque, fleetsave ofensivo) — só libera slots e vigia
+- Parar o processo no férias (bot up, workers off)
 
 ---
 
 ## Ordem sugerida
 
-1. **World state** + writes a partir dos parses que já existem (overview / fleets / resources)
-2. **Ponte** + wire **Telegram + terminal em paralelo** (toggle worker, status from state)
-3. **Focus presets** em cima da ponte
-4. Fechar parity Brain útil (wake, DOIR) em FEATURES
-5. Agente fino — quando state + ponte já cobrirem o dia a dia
+1. Congelar nomes (`Focus.Current` / `Default`) + tabela preset ↔ chaves
+2. `focus_apply` em cima de `control.py` (guerra + normal + férias)
+3. Férias DOM: entrada já seed → **saída restaura `Focus.Default`**
+4. Wire Telegram `/focus` + sinal TUI/log unificado
+5. (Depois) mais modos só se precisar (`colonize`, …)
 
 ---
 
+## Depois, se doer
+
+Não bloqueiam Focus:
+
+- **World state** — cache do que o bot já viu (status remoto sem reparse)
+- **Agente** — intenção → `focus_apply` / toggles; nunca recebe `Page`
+- Brain parity (wake, DOIR) — continua em FEATURES; Focus só escolhe *o que pode correr*
+
+---
+
+## Aberto
+
+- [ ] Nome estável: `Focus` vs `Brain.Mode`
+- [ ] Conteúdo exato do pacote `normal` (snapshot do settings atual vs lista fixa)
+- [ ] Valor default de `Focus.Default` (`normal`?)
+- [ ] `/focus férias` manual: o DOM pode “acordar” sozinho ao sair do férias OGame?
+- [ ] Override humano (tecla `w`) durante férias DOM: respeitar ou re-aplicar preset no refresh?
+- [ ] Lista fina de spenders no modo `guerra` (inclui AutoHarvest? Discovery?)
+
 ## Gatilhos pra virar épico em FEATURES
 
-- [ ] Schema estável das fatias do world state (+ regra de stale / revalidação)
-- [ ] Catálogo da ponte (ops + descritivos + risco) usado por Telegram **e** terminal sem fork de lógica
-- [ ] Prova: toggle worker / `/status` sem restart; os dois transportes no mesmo processo
-- [ ] Nome estável dos modos Focus + tabela preset ↔ chaves `settings.json`
-- [ ] Teste: trocar focus sem restart e ver workers respeitarem no próximo tick
+- [ ] Tabela preset ↔ chaves fechada para `normal` / `guerra` / `férias`
+- [ ] `focus_apply` + persist `Current`/`Default`
+- [ ] Saída DOM férias → aplica `Default` sem restart
+- [ ] TUI/log: `modo férias ativado` estável
+- [ ] Prova: `/focus guerra` (ou terminal) sem restart; Defender on, Autofleet off, spenders off
 
-Até lá: este arquivo é só âncora de discussão.
+Até lá: âncora de discussão.

@@ -7,6 +7,9 @@ import threading
 # shortcuts that should abort a worker burst
 INTERRUPT = frozenset("blwr")
 
+# msvcrt: \xe0/\x00 prefix + scan → nome estável (não passa por .lower())
+_SPECIAL = {"H": "up", "P": "down", "K": "left", "M": "right"}
+
 
 class KeyPump:
     def __init__(self) -> None:
@@ -35,7 +38,11 @@ class KeyPump:
             if msvcrt.kbhit():
                 ch = msvcrt.getwch()
                 if ch in ("\x00", "\xe0"):
-                    msvcrt.getwch()
+                    code = msvcrt.getwch()
+                    name = _SPECIAL.get(code)
+                    if name:
+                        with self._lock:
+                            self._buf.append(name)
                     continue
                 if ch:
                     with self._lock:
@@ -61,12 +68,14 @@ class KeyPump:
 
 
 if __name__ == "__main__":
+    assert _SPECIAL["H"] == "up" and _SPECIAL["P"] == "down"
     k = KeyPump()
     assert k.get() is None
     assert not k.pending() and not k.has_interrupt()
     with k._lock:
         k._buf.append("x")
         k._buf.append("b")
+        k._buf.append("up")
     assert k.pending() and k.has_interrupt()
     assert k.get() == "x"
     assert k.has_interrupt()

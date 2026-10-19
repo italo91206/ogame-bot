@@ -5,6 +5,7 @@ import time
 
 from playwright.sync_api import sync_playwright
 
+import control
 from compose import build_runtime
 from config import load_settings
 from game import (
@@ -14,6 +15,7 @@ from game import (
     dom_health,
     go_headed,
     go_headless,
+    is_vacation_mode,
     launch_browser,
     login,
     new_context,
@@ -27,8 +29,10 @@ from keys import KeyPump
 from features.overview import worker_rows
 from runtime import Worker
 from telegram_notify import from_settings as telegram_from_settings
+from telegram_notify import mark_clean_stop
 from tui import SHORTCUTS_INSPECT, SHORTCUTS_RUN, BotTUI, WorkerRow
 from tui_boot import play_boot
+from bot_watchdog import ensure_watchdog
 
 _DASH = "dash"
 
@@ -129,9 +133,46 @@ def main() -> None:
                     "runtime": runtime,
                     "resources": ResourceBook(),
                     "notify": tg.notify,
+                    "vacation": False,
                 }
 
+                inspecting = False
+                recovering = False
+                paused: list[Worker] = []
+                last_dom_crit_log = 0.0
+                # nomes ativos no boot — heal se pause aninhado perder a lista
+                boot_active = {w.name for w in runtime.workers if w.active}
+
+                def refresh_vacation() -> None:
+                    """1ª leitura DOM: férias → desliga todos (persist) + zero ticks."""
+                    try:
+                        vac = bool(is_vacation_mode(game))
+                    except Exception:
+                        return
+                    prev = bool(ctx.get("vacation"))
+                    ctx["vacation"] = vac
+                    tui.vacation = vac
+                    if vac and not prev:
+                        tick("conta em modo férias — desligando workers", "warn")
+                        for name in control.disable_all_for_vacation(
+                            settings,
+                            runtime,
+                            boot_active=boot_active,
+                            paused=paused,
+                        ):
+                            tick(f"{name} desabilitado: modo férias", "warn")
+                    elif not vac and prev:
+                        tick("férias encerrado — workers ficam como no settings", "warn")
+                    if vac:
+                        if not inspecting:
+                            tui.set_status("férias — sem ações")
+                        # workers parados → evita DOM stale → recover spam
+                        dom_health.mark_good()
+
                 def on_idle() -> None:
+                    # férias antes de qualquer outra coisa do idle
+                    if not inspecting:
+                        refresh_vacation()
                     ctx["resources"].push_tui(tui)
                     tui.health = dom_health.status_line()
                     tui.set_workers(worker_rows(runtime.workers, stubs))
@@ -140,13 +181,8 @@ def main() -> None:
                     live.update(tui.render())
 
                 ctx["refresh"] = on_idle
-
-                inspecting = False
-                recovering = False
-                paused: list[Worker] = []
-                last_dom_crit_log = 0.0
-                # nomes ativos no boot — heal se pause aninhado perder a lista
-                boot_active = {w.name for w in runtime.workers if w.active}
+                # primeira percepção DOM (antes do loop / workers)
+                refresh_vacation()
 
                 def pause_workers() -> None:
                     # ponytail: não clear se já pausado — recover após inspect
@@ -274,6 +310,7 @@ def main() -> None:
                     }
                 )
                 tg.start()
+                ensure_watchdog(log=lambda m, lv="info": tick(m, lv))
                 tg.notify(f"bot up · {uni} · {tg.uptime()}", key="boot", cooldown_s=30)
                 if not tg.chat_id:
                     tick("telegram: envie /start no bot p/ ligar o chat", "warn")
@@ -339,13 +376,19 @@ def main() -> None:
 
                 keys = KeyPump()
                 keys.start()
+                down_reason = "exit"
+                _UI_FAST = frozenset({"workers", "logs"})
+                last_heavy_idle = 0.0
                 try:
                     while True:
+                        skip_idle = False  # seta: só live.update
+                        did_bot = False
+                        key = None
+                        now = time.time()
                         # janela fechada antes de tecla — evita b bufferizado reabrir inspect
                         if inspecting and not browser_alive(game):
                             leave_inspect()
                             keys.drain()
-                            on_idle()
                         else:
                             key = keys.get()
                             sc = SHORTCUTS_INSPECT if inspecting else SHORTCUTS_RUN
@@ -355,71 +398,134 @@ def main() -> None:
                                 else:
                                     tui.show_log_tail(50)
                                 keys.drain()
-                                on_idle()
                             elif key == "w":
                                 if tui.view == "workers":
                                     tui.hide_overlay(sc)
                                 else:
                                     tui.show_workers()
                                 keys.drain()
-                                on_idle()
+                            elif tui.view == "workers" and key in ("up", "down"):
+                                # refresh leve: só seleção; não drain (fila de setas)
+                                tui.move_worker_sel(-1 if key == "up" else 1)
+                                live.update(tui.render())
+                                skip_idle = True
+                            elif tui.view == "workers" and key in (" ", "\r"):
+                                msg = control.toggle_at(
+                                    settings,
+                                    runtime,
+                                    tui.worker_sel,
+                                    boot_active=boot_active,
+                                    paused=paused,
+                                )
+                                tick(msg, "ok")
+                            elif (
+                                tui.view == "workers"
+                                and key
+                                and key not in "blwr"
+                            ):
+                                idx = control.key_to_index(key)
+                                if idx is not None:
+                                    if 0 <= idx < len(tui.workers):
+                                        tui.worker_sel = idx
+                                    msg = control.toggle_at(
+                                        settings,
+                                        runtime,
+                                        idx,
+                                        boot_active=boot_active,
+                                        paused=paused,
+                                    )
+                                    tick(msg, "ok")
                             elif key == "b" and tui.view == _DASH:
                                 if inspecting:
                                     leave_inspect()
                                 else:
                                     enter_inspect()
                                 keys.drain()
-                                on_idle()
                             elif key == "r" and not inspecting and tui.view == _DASH:
+                                refresh_vacation()
                                 tick("reconfirm — tick em todos os workers", "warn")
                                 keys.drain()
                                 for name, status in runtime.reconfirm(
                                     ctx, stop_when=keys.has_interrupt
                                 ):
                                     tick(f"{name}: {status}", "ok")
-                                on_idle()
-                            # overlays (l/w) só mudam a TUI — workers e health seguem
-                            elif dom_health.is_critical_stale():
-                                sg = dom_health.since_good()
-                                age = (
-                                    f"{int(sg // 60)}m"
-                                    if sg is not None
-                                    else "nunca"
+                            elif key is not None:
+                                pass  # tecla sem binding neste modo
+                            else:
+                                # sem tecla: no overlay, bot no máx. 1/s (poll tecla a 50ms)
+                                bot_due = (
+                                    tui.view not in _UI_FAST
+                                    or now - last_heavy_idle >= 1.0
                                 )
-                                msg = (
-                                    f"DOM crítico ({age}) — bot down, ação no desktop"
-                                )
-                                now = time.time()
-                                if now - last_dom_crit_log >= 30 * 60:
-                                    last_dom_crit_log = now
-                                    tick(msg, "warn")
-                                    tg.notify(
-                                        msg, key="dom_critical", cooldown_s=0
-                                    )
-                                if not inspecting:
-                                    recover_dead_dom()
-                            elif not inspecting:
-                                if dom_health.is_stale():
-                                    recover_dead_dom()
-                                else:
-                                    for name, status in runtime.run_once(
-                                        ctx, stop_when=keys.has_interrupt
-                                    ):
-                                        tick(f"{name}: {status}", "ok")
-                        on_idle()
-                        # pending key / inspect → poll curto; overlay não pausa o bot
-                        if keys.pending() or inspecting:
+                                if bot_due:
+                                    did_bot = True
+                                    if dom_health.is_critical_stale():
+                                        sg = dom_health.since_good()
+                                        age = (
+                                            f"{int(sg // 60)}m"
+                                            if sg is not None
+                                            else "nunca"
+                                        )
+                                        msg = (
+                                            f"DOM crítico ({age}) — bot down, ação no desktop"
+                                        )
+                                        if now - last_dom_crit_log >= 30 * 60:
+                                            last_dom_crit_log = now
+                                            tick(msg, "warn")
+                                            tg.notify(
+                                                msg, key="dom_critical", cooldown_s=0
+                                            )
+                                        if not inspecting:
+                                            recover_dead_dom()
+                                    elif not inspecting:
+                                        refresh_vacation()
+                                        if dom_health.is_stale():
+                                            recover_dead_dom()
+                                        else:
+                                            for name, status in runtime.run_once(
+                                                ctx, stop_when=keys.has_interrupt
+                                            ):
+                                                tick(f"{name}: {status}", "ok")
+                        # seta: leve; overlay sem tecla: idle ≤1/s; resto: idle sempre
+                        if skip_idle:
+                            pass
+                        elif (
+                            tui.view in _UI_FAST
+                            and key is None
+                            and not did_bot
+                        ):
+                            pass
+                        else:
+                            on_idle()
+                            last_heavy_idle = time.time()
+                        if (
+                            keys.pending()
+                            or inspecting
+                            or tui.view in _UI_FAST
+                        ):
                             time.sleep(0.05)
                         else:
                             time.sleep(1)
                 except KeyboardInterrupt:
+                    down_reason = "Ctrl+C"
                     tui.set_status("stopped")
                     tick("Ctrl+C — saindo", "warn")
-                    tg.notify("bot parando (Ctrl+C)", key="stop", cooldown_s=5)
                     live.update(tui.render())
                     time.sleep(0.5)
+                except BaseException as e:
+                    down_reason = f"crash {type(e).__name__}: {e}"
+                    tick(down_reason, "error")
+                    raise
                 finally:
-                    keys.stop()
+                    try:
+                        tg.notify_down(down_reason)
+                    except Exception:
+                        pass
+                    mark_clean_stop()
+                    try:
+                        keys.stop()
+                    except Exception:
+                        pass
                     tg.stop()
             finally:
                 try:

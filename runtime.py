@@ -111,6 +111,9 @@ class Runtime:
 
         stop_when: if True before/after a tick, leave remaining due for next loop.
         """
+        # modo férias (DOM): bot sobe, zero ticks / ações
+        if ctx.get("vacation"):
+            return []
         now = time.time()
         sleeping = bool(ctx.get("sleeping"))
         results: list[tuple[str, str]] = []
@@ -176,6 +179,9 @@ if __name__ == "__main__":
     assert rt.run_once(ctx)[0][0] == "t"
     assert ctx["n"] == 1
     assert not w.due()  # after tick, +60s
+    w._next_at = 0.0
+    assert rt.run_once({"vacation": True}) == []
+    assert ctx["n"] == 1  # férias: sem tick
     w2 = _W("t2", interval_min=60, interval_max=60)
     w2._next_wait = 12
     assert w2.schedule_next() == 12
