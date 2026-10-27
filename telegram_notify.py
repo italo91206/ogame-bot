@@ -79,6 +79,7 @@ class TelegramBot:
         self.commands = commands or {}
         self.autopping_hours = float(autopping_hours or 0)
         self._log = log
+        self.status_fn: Callable[[], str] | None = None  # ex.: sleep_status_line
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._offset = 0
@@ -86,6 +87,15 @@ class TelegramBot:
         self._last_ping = 0.0
         self._last_key: dict[str, float] = {}
         self._cooldown_s = 120.0
+
+    def status_extra(self) -> str:
+        if not self.status_fn:
+            return ""
+        try:
+            s = (self.status_fn() or "").strip()
+        except Exception:
+            return ""
+        return f" · {s}" if s else ""
 
     def _emit(self, msg: str, level: str = "info") -> None:
         if self._log:
@@ -215,7 +225,7 @@ class TelegramBot:
                 "sendMessage",
                 {
                     "chat_id": cid,
-                    "text": "comandos: /ping /status /pause /resume",
+                    "text": "comandos: /ping /status /pause /resume /sleep /wakeup",
                 },
             )
             return
@@ -241,7 +251,11 @@ class TelegramBot:
                 and time.time() - self._last_ping >= self.autopping_hours * 3600
             ):
                 self._last_ping = time.time()
-                self.notify(f"pong · uptime {self.uptime()}", key="autopping", cooldown_s=0)
+                self.notify(
+                    f"pong · uptime {self.uptime()}{self.status_extra()}",
+                    key="autopping",
+                    cooldown_s=0,
+                )
             for u in self._get_updates():
                 uid = u.get("update_id")
                 if isinstance(uid, int):

@@ -29,6 +29,7 @@ from game import (
 from keys import KeyPump
 from features.overview import worker_rows
 from runtime import Worker
+from telegram_cmds import install as install_telegram_cmds
 from telegram_notify import from_settings as telegram_from_settings
 from telegram_notify import mark_clean_stop
 from tui import SHORTCUTS_INSPECT, SHORTCUTS_RUN, BotTUI, WorkerRow
@@ -36,7 +37,6 @@ from tui_boot import play_boot
 from bot_watchdog import ensure_watchdog
 
 _DASH = "dash"
-
 
 def main() -> None:
     settings = load_settings()
@@ -279,48 +279,18 @@ def main() -> None:
                     finally:
                         recovering = False
 
-                tg.commands.update(
-                    {
-                        "/ping": lambda: f"pong · {tg.uptime()}",
-                        "/status": lambda: (
-                            f"uptime {tg.uptime()}\n"
-                            f"headless={headless} inspect={inspecting} "
-                            f"recover={recovering}\n"
-                            f"workers on="
-                            f"{sum(1 for w in runtime.workers if w.active)}/"
-                            f"{len(runtime.workers)}\n"
-                            f"health {dom_health.status_line()}\n"
-                            + (
-                                f"SOB ATAQUE ×{tui.under_attack_n or 1}: "
-                                f"{tui.under_attack}"
-                                if tui.under_attack
-                                else "ataque: safe"
-                            )
-                        ),
-                        "/pause": lambda: (
-                            "já em inspect/recover"
-                            if inspecting or recovering
-                            else (pause_workers() or "workers pausados")
-                        ),
-                        "/resume": lambda: (
-                            "inspect — no desktop: tecla b"
-                            if inspecting
-                            else "recover em andamento"
-                            if recovering
-                            else (
-                                (resume_workers() or "workers retomados")
-                                if paused
-                                else "nada pausado"
-                            )
-                        ),
-                    }
+                install_telegram_cmds(
+                    tg, ctx=ctx, headless=headless, runtime=runtime, tui=tui,
+                    dom_health=dom_health, paused=paused,
+                    pause_workers=pause_workers, resume_workers=resume_workers,
+                    is_inspecting=lambda: inspecting,
+                    is_recovering=lambda: recovering,
                 )
                 tg.start()
                 ensure_watchdog(log=lambda m, lv="info": tick(m, lv))
                 tg.notify(f"bot up · {uni} · {tg.uptime()}", key="boot", cooldown_s=30)
                 if not tg.chat_id:
                     tick("telegram: envie /start no bot p/ ligar o chat", "warn")
-
                 def enter_inspect() -> None:
                     nonlocal game, inspecting
                     save_session(game.context, spath)
@@ -525,7 +495,6 @@ def main() -> None:
                 close_browser(cur)
                 if browser is not None and browser is not cur:
                     close_browser(browser)
-
 
 if __name__ == "__main__":
     main()

@@ -96,8 +96,10 @@ Quando o recover cai em login completo / captcha, **manda** (key `login_captcha`
 | `/status` | sessão ok? headless? workers? recovering/inspecting? sob ataque? |
 | `/pause` | pausa workers (igual fluxo de inspect) |
 | `/resume` | retoma workers se sessão saudável |
+| `/sleep` | fila fleetsave: recall voos → espera retorno → ghost (luas preferidas) → dorme até `SleepMode.WakeUp` |
+| `/wakeup` | cancela fila `/sleep` e acorda |
 
-**Depois (paridade TBot, sob demanda):** `/sleep`, toggle features, fleet helpers (E16-T05).
+**Depois (paridade TBot, sob demanda):** toggle features, `/ghost`, jumpgate/auction (E16-T05).
 
 **Critério de pronto:** do celular, `/status` responde enquanto o bot roda no PC; linha `telegram: cmd /status` aparece em `logs/`.
 

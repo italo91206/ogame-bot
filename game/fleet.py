@@ -206,6 +206,35 @@ def recall_fleet(page: Page, fleet_id: int) -> str:
     return "ok"
 
 
+def recallable_fleet_ids(page: Page) -> list[int]:
+    """IDs com link return= na movement (ainda canceláveis)."""
+    open_component(page, "movement")
+    html = page.content()
+    out: list[int] = []
+    seen: set[int] = set()
+    for m in _RECALL_HREF_RE.finditer(html):
+        fid = int(m.group(1))
+        if fid not in seen:
+            seen.add(fid)
+            out.append(fid)
+    return out
+
+
+def recall_all_fleets(page: Page) -> tuple[int, int]:
+    """Recall de todas as frotas canceláveis. Retorna (ok, fail)."""
+    ok = fail = 0
+    for fid in recallable_fleet_ids(page):
+        try:
+            st = recall_fleet(page, fid)
+        except Exception:
+            st = "fail"
+        if st == "ok":
+            ok += 1
+        else:
+            fail += 1
+    return ok, fail
+
+
 def _event_list_html(page: Page) -> str:
     base = page.url.split("?")[0]
     url = f"{base}?page=componentOnly&component=eventList&ajax=1"
@@ -328,6 +357,25 @@ def expo_back_in(page: Page, *, latest: bool = False) -> float | None:
 
 def earliest_expo_back_in(page: Page) -> float | None:
     return expo_back_in(page, latest=False)
+
+
+def fleets_max_eta(page: Page) -> float:
+    """Max ETA (s) of non-Discovery eventFleet rows; 0 = nenhuma frota."""
+    now = time.time()
+    delay = 0.0
+    rows = page.locator("tr.eventFleet")
+    for i in range(rows.count()):
+        el = rows.nth(i)
+        mission = el.get_attribute("data-mission-type") or ""
+        if mission == str(MISSION_DISCOVERY):
+            continue
+        arrival = el.get_attribute("data-arrival-time")
+        if not arrival or not arrival.isdigit():
+            continue
+        eta = int(arrival) - now
+        if eta > 0:
+            delay = max(delay, eta)
+    return delay
 
 
 def fleets_delay_until_sleep(page: Page, sleep_secs: float) -> float:

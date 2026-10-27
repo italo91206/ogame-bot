@@ -11,7 +11,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | ID | Épico | Escopo |
 |----|--------|--------|
 | [E00](#e00--fundação--runtime) | Fundação / Runtime `done` | sessão, config, loop, slots, captcha |
-| [E01](#e01--sleep-mode--fleet-save) | SleepMode / FleetSave `T01+T02+T03 done` | janela de sono, ghost fleet |
+| [E01](#e01--sleep-mode--fleet-save) | SleepMode / FleetSave `T01–T03+T06 done` | janela de sono, ghost fleet, `/sleep` |
 | [E02](#e02--defender) | Defender `T01+T02+T04+T05+T09 done` | anti-ataque, evacuate, spy/msg |
 | [E03](#e03--expeditions) | Expeditions `T01+T02+T04+T06+T08 done` | manter slots de expo cheios |
 | [E04](#e04--brain--orquestração) | Brain (orquestração) `T02+T04 done` | master switch + transports + ArriveIn |
@@ -66,6 +66,9 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E01-T03 | AutoFleetSave | `done` | Deploy/Harvest/Spy/Colonize + recall (`fleetsave.py`); `OnlyMoons` filtra em `sleepmode.py`; deploy dest prefere outras luas | `AutoFleetSave.{Active,OnlyMoons,DeutToLeave,Recall,DefaultMission}` |
 | E01-T04 | Logout on sleep | `skip` | Logout comentado no TBot; sessão Playwright fica | `LogoutOnSleep` |
 | E01-T05 | Notify | `todo` | Avisar início/fim de sono | `SleepMode.TelegramMessenger.Active` → **E16** |
+| E01-T06 | `/sleep` Telegram | `done` | Recall → wait frota → fleetsave luas → force sleep até `WakeUp`; `/wakeup` cancela; status em TUI + `/status` + autopping | `SleepMode.WakeUp` + `AutoFleetSave.*` (params; Active não exige p/ /sleep) |
+| E01-T07 | Concentrar antes do `/sleep` | `todo` | Haul recursos → celestial alvo (lua/`AutoRepatriate.Target`) antes do fleetsave | reusar E10; Target Type=Moon |
+| E01-T08 | Centralizar frota (jumpgate) | `todo` | Antes do fleetsave, juntar naves no celestial de save via jumpgate se existir | game jumpgate + Origin/Target lua |
 
 ---
 
@@ -296,7 +299,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E16-T02 | Telegram | Alertas + comandos + `notify_down` + heartbeat/`bot_watchdog.py` (`doing`) | `TelegramMessenger` / `TelegramAutoPing` / `TelegramWatchdog` + `.env` — `docs/TELEGRAM_REMOTE.md` |
 | E16-T03 | WebUI | Editar settings + logs | `WebUI.{Enable,Urls,MaxLogsToShow}` |
 | E16-T04 | Proxy outbound | HTTP/SOCKS5 | `General.Proxy.{Enabled,Address,Type,Username,Password,LoginOnly}` |
-| E16-T05 | Fleet helpers manuais | Deploy/ghost/jumpgate/auction via comando | comandos Telegram (não worker timed) |
+| E16-T05 | Fleet helpers manuais | Deploy/ghost/jumpgate/auction via comando (`/sleep`/`/wakeup` → **E01-T06**) | comandos Telegram (não worker timed) |
 
 ---
 

@@ -184,10 +184,12 @@ Sem token ou com `TelegramMessenger.Active: false`, o Telegram fica no-op.
 | Comando | Efeito |
 |---------|--------|
 | `/start` | Lista comandos |
-| `/ping` | `pong` + uptime |
-| `/status` | sessão, headless, inspect/recover, ataque |
+| `/ping` | `pong` + uptime + sleep |
+| `/status` | sleep, sessão, headless, inspect/recover, ataque |
 | `/pause` | pausa workers |
 | `/resume` | retoma (se não estiver em inspect/recover) |
+| `/sleep` | recall frotas → fleetsave (luas) → dorme até `SleepMode.WakeUp` |
+| `/wakeup` | cancela `/sleep` e acorda agora |
 
 Auto-ping a cada `TelegramAutoPing.EveryHours` (se ativo).
 
