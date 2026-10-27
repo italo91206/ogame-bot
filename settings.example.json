@@ -61,6 +61,10 @@
       "MinFleetToSave": 20000000
     },
     "WhiteList": [],
+    "SpyAttacker": {
+      "Active": true,
+      "Probes": 20
+    },
     "Autofleet": {
       "Active": true,
       "BuildCargosIfNeeded": true

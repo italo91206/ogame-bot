@@ -1,4 +1,4 @@
-"""E02 Defender T01+T02+T05+T04+T09: poll hostis, filtros, whitelist, autofleet, alarm."""
+"""E02 Defender T01+T02+T04+T05+T06+T09: poll hostis, filtros, whitelist, spy, autofleet, alarm."""
 from __future__ import annotations
 
 import threading
@@ -8,9 +8,11 @@ from typing import Any
 from features.fleetsave import attack_min_duration, fleetsave_celestial, process_recalls
 from game import (
     current_resources,
+    ogame_distance,
     parse_celestials,
     parse_ogame_int,
     parse_ships,
+    send_fleet,
     switch_celestial,
 )
 from game.attacks import (
@@ -20,8 +22,11 @@ from game.attacks import (
     is_only_probes,
     list_hostile_attacks,
 )
+from game.fleet import MISSION_SPY
 from game.models import Celestial, Coords
 from runtime import Worker
+
+PROBE_ID = 210
 
 _DEFAULTS = {
     "Active": True,
@@ -36,6 +41,7 @@ _DEFAULTS = {
         "MinFleetToSave": 20_000_000,
     },
     "WhiteList": [],
+    "SpyAttacker": {"Active": False, "Probes": 20},
     "Autofleet": {"Active": False, "BuildCargosIfNeeded": True},
     "Alarm": {"Active": True},
     # CooldownMinutes = silêncio Telegram por id de frota (não a cada poll)
@@ -85,6 +91,62 @@ def find_celestial(celestials: list[Celestial], dest: Coords) -> Celestial | Non
         ):
             return c
     return None
+
+
+def spy_from_ranked(
+    preferred: Celestial | None,
+    celestials: list[Celestial],
+    toward: Coords,
+) -> list[Celestial]:
+    """Alvo primeiro; depois lua > planeta, mais perto do origin do atacante."""
+    rest = [c for c in celestials if preferred is None or c.id != preferred.id]
+    rest.sort(
+        key=lambda c: (
+            0 if c.coords.type == "Moon" else 1,
+            ogame_distance(c.coords, toward),
+        )
+    )
+    out: list[Celestial] = []
+    if preferred is not None:
+        out.append(preferred)
+    out.extend(rest)
+    return out
+
+
+def spy_attacker(
+    page: Any,
+    preferred: Celestial | None,
+    celestials: list[Celestial],
+    origin: Coords,
+    probes: int,
+) -> str:
+    """Sondas → origin do atacante; fallback se o alvo estiver sem probes."""
+    need = max(1, int(probes))
+    dest_type = 3 if origin.type == "Moon" else 1
+    tried = 0
+    for cel in spy_from_ranked(preferred, celestials, origin):
+        switch_celestial(page, cel)
+        ships = parse_ships(page)
+        have = int(ships.get(PROBE_ID, {}).get("number") or 0)
+        if have <= 0:
+            continue
+        tried += 1
+        n = min(have, need)
+        status = send_fleet(
+            page,
+            {PROBE_ID: n},
+            origin.galaxy,
+            origin.system,
+            origin.position,
+            mission=MISSION_SPY,
+            speed=10,
+            dest_type=dest_type,
+        )
+        if status == "ok":
+            via = "alvo" if preferred is not None and cel.id == preferred.id else cel.label
+            return f"ok {n}p via {via} → {origin}"
+        return f"{status} via {cel.label}"
+    return "sem probes" if tried == 0 else "fail: spy"
 
 
 def skip_reason(
@@ -138,6 +200,8 @@ class DefenderWorker(Worker):
         self.interval_max = hi
         saved_ids: set[int] = getattr(self, "_saved", None) or set()
         self._saved = saved_ids
+        spied_ids: set[int] = getattr(self, "_spied", None) or set()
+        self._spied = spied_ids
         alerted: set[int] = getattr(self, "_alerted", None) or set()
         self._alerted = alerted
         was_threat = bool(getattr(self, "_was_threat", False))
@@ -164,6 +228,7 @@ class DefenderWorker(Worker):
 
         live_ids = {a.id for a in attacks}
         self._saved &= live_ids
+        self._spied &= live_ids
         alerted &= live_ids
 
         if not attacks:
@@ -209,6 +274,11 @@ class DefenderWorker(Worker):
             af = {}
         autofleet = bool(af.get("Active"))
         build_cargos = bool(af.get("BuildCargosIfNeeded", True))
+        spy_cfg = _cfg(cfg, "SpyAttacker") or {}
+        if not isinstance(spy_cfg, dict):
+            spy_cfg = {}
+        spy_on = bool(spy_cfg.get("Active"))
+        spy_probes = max(1, int(spy_cfg.get("Probes") or 20))
         alarm_cfg = _cfg(cfg, "Alarm") or {}
         if not isinstance(alarm_cfg, dict):
             alarm_cfg = {}
@@ -219,13 +289,19 @@ class DefenderWorker(Worker):
         tg_on = bool(tg_cfg.get("Active", True))
         tg_cd_s = max(60.0, float(tg_cfg.get("CooldownMinutes") or 60) * 60.0)
 
-        need_local = ignore_weak or bool(ignore_have.get("Active")) or autofleet
+        need_local = (
+            ignore_weak
+            or bool(ignore_have.get("Active"))
+            or autofleet
+            or spy_on
+        )
         celestials = parse_celestials(page) if need_local else []
         cache: dict[str, tuple[dict[int, int], int]] = {}
 
         threats = 0
         skipped = 0
         saved = 0
+        spied = 0
         banner_bits: list[str] = []
         for atk in attacks:
             our_ships = None
@@ -287,9 +363,36 @@ class DefenderWorker(Worker):
                     if notify:
                         notify(msg, key=f"atk:{atk.id}", cooldown_s=tg_cd_s)
 
+            cel = None
+            if spy_on or autofleet:
+                cel = find_celestial(celestials, atk.dest)
+
+            if spy_on and atk.id not in self._spied:
+                if atk.origin is None:
+                    self._spied.add(atk.id)
+                    if tui:
+                        tui.log(f"Defender: spy sem origin {atk.dest}", "warn")
+                elif not celestials:
+                    if tui:
+                        tui.log("Defender: spy sem celestials", "warn")
+                else:
+                    try:
+                        status = spy_attacker(
+                            page, cel, celestials, atk.origin, spy_probes
+                        )
+                    except Exception as e:
+                        status = f"fail: {e}"
+                    if status.startswith("ok"):
+                        self._spied.add(atk.id)
+                        spied += 1
+                    if tui:
+                        tui.log(
+                            f"Defender: spy {status}",
+                            "ok" if status.startswith("ok") else "warn",
+                        )
+
             if not autofleet or atk.id in self._saved or atk.mission == 10:
                 continue
-            cel = find_celestial(celestials, atk.dest)
             if cel is None:
                 if tui:
                     tui.log(f"Defender: autofleet sem celestial {atk.dest}", "warn")
@@ -330,6 +433,7 @@ class DefenderWorker(Worker):
             self._was_threat = True
             self.reason = (
                 f"AMEAÇA {threats}"
+                + (f" · spy {spied}" if spied else "")
                 + (f" · save {saved}" if saved else "")
                 + (f" · skip {skipped}" if skipped else "")
             )
@@ -406,4 +510,11 @@ if __name__ == "__main__":
         our_resources=None,
     )
     assert why2 == "só probes"
+    assert a.origin == Coords(1, 2, 3, "Planet")
+    pref = Celestial("p", "Alvo", Coords(4, 5, 6))
+    near = Celestial("n", "Perto", Coords(1, 2, 4))
+    far = Celestial("f", "Longe", Coords(1, 50, 1))
+    moon = Celestial("m", "Lua", Coords(1, 3, 1, "Moon"))
+    ranked = spy_from_ranked(pref, [far, near, moon, pref], Coords(1, 2, 3))
+    assert [c.id for c in ranked] == ["p", "m", "n", "f"], [c.id for c in ranked]
     print("defender ok")

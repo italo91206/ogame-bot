@@ -107,7 +107,7 @@ Cada épico ≈ um módulo em `features/`, ligado em `compose.py`. Liga/desliga 
 |--------|----------|-----------|
 | Overview | (sempre) | Health DOM / wake do Brain |
 | SleepMode | `SleepMode` | Pausa workers na janela de sono; fleet-save opcional |
-| Defender | `Defender` | Detecta ataque, alarme, Telegram, evacuate |
+| Defender | `Defender` | Detecta ataque, alarme, Telegram, spy, evacuate |
 | Expeditions | `Expeditions` | Mantém slots de expedição |
 | AutoFarm | `AutoFarm` | Farm de inativos |
 | AutoHarvest | `AutoHarvest` | Recicla debris |

@@ -12,7 +12,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 |----|--------|--------|
 | [E00](#e00--fundação--runtime) | Fundação / Runtime `done` | sessão, config, loop, slots, captcha |
 | [E01](#e01--sleep-mode--fleet-save) | SleepMode / FleetSave `T01–T03+T06 done` | janela de sono, ghost fleet, `/sleep` |
-| [E02](#e02--defender) | Defender `T01+T02+T04+T05+T09 done` | anti-ataque, evacuate, spy/msg |
+| [E02](#e02--defender) | Defender `T01+T02+T04+T05+T06+T09 done` | anti-ataque, evacuate, spy/msg |
 | [E03](#e03--expeditions) | Expeditions `T01+T02+T04+T06+T08 done` | manter slots de expo cheios |
 | [E04](#e04--brain--orquestração) | Brain (orquestração) `T02+T04 done` | master switch + transports + ArriveIn |
 | [E05](#e05--brain--automine) | Brain · AutoMine `core + T09+T10 done` | minas/facilidades/lua (+ parity `todo`) |
@@ -72,7 +72,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 
 ---
 
-## E02 — Defender `T01+T02+T04+T05+T09 done`
+## E02 — Defender `T01+T02+T04+T05+T06+T09 done`
 
 **O que é:** vigilância de ataques.  
 **O que faz:** polling de fleets hostis; alarme; spy/msg no atacante; evacuate (autofleet); whitelist; ignora probes/ataques fracos/baixo valor; defesa de mísseis; atividade random em “Home”.
@@ -84,7 +84,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E02-T03 | Mísseis | `todo` | Reagir a IPM; TBot remapeia silo ABM para o **planeta** do mesmo G:S:P se o alvo for lua | `DefendFromMissiles` |
 | E02-T04 | Autofleet | `done` | Evacuar via `fleetsave.py` no celestial atacado (planeta **ou** lua; não usa `OnlyMoons`) | `Autofleet.{Active,BuildCargosIfNeeded}` + `SleepMode.AutoFleetSave` |
 | E02-T05 | WhiteList | `done` | Não reagir a IDs listados | `WhiteList[]` (player IDs) |
-| E02-T06 | SpyAttacker | `todo` | Espionar atacante | `SpyAttacker.{Active,Probes}` |
+| E02-T06 | SpyAttacker | `done` | Espionar origin do atacante; prefer alvo, fallback celestial com probes mais perto | `SpyAttacker.{Active,Probes}` |
 | E02-T07 | MessageAttacker | `todo` | Mandar msg aleatória | `MessageAttacker.{Active,Messages[]}` |
 | E02-T08 | RandomActivity | `todo` | Atividade fake no Home | `RandomActivity`, `Home.{Galaxy,System,Position,Type}` |
 | E02-T09 | Alarm / Telegram | `done` | Beep + banner TUI vermelho + push | `Alarm.Active`, `TelegramMessenger.{Active,CooldownMinutes}` |
