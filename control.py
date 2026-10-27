@@ -8,8 +8,8 @@ from typing import Any
 
 from config import DEFAULT_SETTINGS, ROOT
 
-# tecla → índice; sem b/l/w/r (atalhos do main)
-_INDEX_KEYS = "123456789acdefghijkmnopqstuvxyz"
+# tecla → índice; reservados: b/l/w/r (main) · g/s (focus perfil/salva)
+_INDEX_KEYS = "123456789acdefhijklmnopqrtuvxyz"
 
 # worker.name → path até a chave Active no JSON
 ACTIVE_PATH: dict[str, tuple[str, ...]] = {
@@ -91,6 +91,33 @@ def settings_active(settings: dict, name: str) -> bool | None:
     return bool(_get(settings, path, False))
 
 
+def _persist_names(
+    settings: dict,
+    names: list[str],
+    *,
+    file: Path | None = None,
+) -> None:
+    """Um read/write no disco para N chaves Active."""
+    if not names:
+        return
+    disk_path = settings_file(file)
+    if disk_path.exists():
+        data = json.loads(disk_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    else:
+        data = {}
+    for name in names:
+        path = ACTIVE_PATH.get(name)
+        if not path:
+            continue
+        _set(data, path, bool(_get(settings, path, False)))
+    disk_path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def set_worker_active(
     settings: dict,
     runtime: Any,
@@ -100,13 +127,15 @@ def set_worker_active(
     file: Path | None = None,
     boot_active: set[str] | None = None,
     paused: list | None = None,
+    persist: bool = True,
 ) -> str:
     path = ACTIVE_PATH.get(name)
     if not path:
         return f"{name}: sem Active no settings"
 
     _set(settings, path, bool(active))
-    _patch_file(settings_file(file), path, bool(active))
+    if persist:
+        _patch_file(settings_file(file), path, bool(active))
 
     w = next((x for x in runtime.workers if x.name == name), None)
     if w is None:
@@ -127,9 +156,13 @@ def set_worker_active(
         return f"{name}: Active={active}"
 
     if paused is not None and w in paused:
-        if not eff:
+        if eff:
+            # fica na lista paused; resume_workers religa. settings/boot já ok.
+            w.reason = "pausado"
+        else:
             paused.remove(w)
-        w.active = False
+            w.active = False
+            w.reason = "off"
         return f"{name}: Active={active} (pausado)"
 
     w.active = eff
@@ -139,6 +172,53 @@ def set_worker_active(
     else:
         w.reason = "off"
     return f"{name}: {'on' if active else 'off'}"
+
+
+def draft_active(draft: dict[str, bool], settings: dict, name: str) -> bool | None:
+    """Valor efetivo na tela de workers (rascunho ∪ settings)."""
+    if name in draft:
+        return bool(draft[name])
+    return settings_active(settings, name)
+
+
+def stage_toggle_at(
+    draft: dict[str, bool],
+    settings: dict,
+    runtime: Any,
+    index: int,
+) -> str:
+    """Só memoria: flip no rascunho. Disco/runtime no apply_draft."""
+    workers = runtime.workers
+    if index < 0 or index >= len(workers):
+        return f"#{index_key(index)}: fora da lista"
+    name = workers[index].name
+    cur = draft_active(draft, settings, name)
+    if cur is None:
+        return f"{name}: sem Active no settings"
+    draft[name] = not cur
+    return f"{name}: {'on' if draft[name] else 'off'} (rascunho)"
+
+
+def apply_draft(
+    draft: dict[str, bool],
+    settings: dict,
+    runtime: Any,
+    **kw: Any,
+) -> list[str]:
+    """Aplica rascunho → runtime + 1 write no settings.json."""
+    if not draft:
+        return []
+    names = list(draft.keys())
+    msgs: list[str] = []
+    for name, active in list(draft.items()):
+        msgs.append(
+            set_worker_active(
+                settings, runtime, name, bool(active), persist=False, **kw
+            )
+        )
+    _persist_names(settings, names, file=kw.get("file"))
+    draft.clear()
+    return msgs
 
 
 def toggle_worker(
@@ -212,6 +292,7 @@ def disable_all_for_vacation(
 if __name__ == "__main__":
     assert key_to_index("1") == 0 and key_to_index("a") == 9
     assert key_to_index("b") is None and key_to_index("c") == 10
+    assert key_to_index("g") is None and key_to_index("s") is None
     assert key_to_index("v") is not None and key_to_index("b") is None
     assert index_key(0) == "1" and index_key(10) == "c"
     d: dict = {}
@@ -249,4 +330,24 @@ if __name__ == "__main__":
         assert disk2["Expeditions"]["Active"] is False
     finally:
         tmp2.unlink(missing_ok=True)
+
+    s3 = {
+        "Expeditions": {"Active": False},
+        "Defender": {"Active": True},
+        "Brain": {"AutoMine": {"Active": False}, "Active": True},
+    }
+    rt3 = _RT([_W("Expeditions", False), _W("Defender", True), _W("AutoMine", False)])
+    draft: dict[str, bool] = {}
+    assert "rascunho" in stage_toggle_at(draft, s3, rt3, 0)
+    assert draft["Expeditions"] is True
+    assert rt3.workers[0].active is False  # ainda não aplicou
+    tmp3 = ROOT / "_control_draft_settings.json"
+    try:
+        tmp3.write_text(json.dumps(s3), encoding="utf-8")
+        applied = apply_draft(draft, s3, rt3, file=tmp3)
+        assert not draft and any("Expeditions" in m for m in applied)
+        assert rt3.workers[0].active is True
+        assert json.loads(tmp3.read_text(encoding="utf-8"))["Expeditions"]["Active"] is True
+    finally:
+        tmp3.unlink(missing_ok=True)
     print("control ok")

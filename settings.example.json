@@ -329,5 +329,45 @@
       "CheckIntervalMin": 30,
       "CheckIntervalMax": 60
     }
+  },
+  "Focus": {
+    "Current": "geral",
+    "Default": "geral",
+    "Profiles": {
+      "geral": {
+        "SleepMode": false,
+        "Defender": true,
+        "Expeditions": true,
+        "AutoFarm": true,
+        "AutoHarvest": false,
+        "AutoColonize": true,
+        "AutoDiscovery": true,
+        "Brain": true,
+        "Transports": true,
+        "AutoMine": true,
+        "AutoResearch": true,
+        "LifeformAutoMine": true,
+        "LifeformAutoResearch": true,
+        "AutoCargo": true,
+        "AutoRepatriate": true
+      },
+      "expeditions": {
+        "SleepMode": true,
+        "Defender": true,
+        "Expeditions": true,
+        "AutoFarm": false,
+        "AutoHarvest": false,
+        "AutoColonize": false,
+        "AutoDiscovery": false,
+        "Brain": false,
+        "Transports": false,
+        "AutoMine": false,
+        "AutoResearch": false,
+        "LifeformAutoMine": false,
+        "LifeformAutoResearch": false,
+        "AutoCargo": false,
+        "AutoRepatriate": false
+      }
+    }
   }
 }

@@ -23,4 +23,4 @@ Se um `.py` do projeto (fora `.venv`) tiver **mais de 500 linhas**, quebre-o **a
 
 - Split por responsabilidade (session / celestial / tech / queues / pick vs worker).
 - Código novo não entra no arquivo inchado: extrai e importa.
-- Baseline já acima: `features/autoresearch.py` — split no próximo toque nesse arquivo. `game/` já split.
+- `features/autoresearch.py` já split (`autoresearch_pick.py`). `game/` já split. Perto do teto: `features/automine.py` (~491).

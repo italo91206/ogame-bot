@@ -98,7 +98,7 @@ meu-bot-ogame/
   - feature gorda → `pick.py` + `worker.py` (ou pacote `features/<nome>/`)
 - Novo código **não** entra no arquivo inchado: extrai o pedaço necessário e importa.
 - Atualizar imports em `main` / workers no mesmo passo.
-- Débito atual (baseline): `features/autoresearch.py` > 500 — priorizar no próximo toque. `game/` já split.
+- `features/autoresearch.py` já split (`autoresearch_pick.py`). `game/` já split. Próximo perto do teto: `features/automine.py` (~491).
 
 ---
 

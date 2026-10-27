@@ -161,21 +161,25 @@ Não bloqueiam Focus:
 
 ---
 
+## Feito (MVP perfis)
+
+- Nome: **`Focus`** + builtins **`geral`** (padrão TBot) e **`expeditions`** (SleepMode/fleetsave + Defender + Expo)
+- API: `focus.py` — `apply_profile` / `save_profile` / `snapshot` / `list_profiles`
+- TUI workers: `g` = geral · `]`/`[` cicla · `s` salva com nome · rascunho continua com Space/tecla
+- Persist: `settings.json` → `Focus.{Current,Default,Profiles}`
+- Alias: `general` → `geral`
+
 ## Aberto
 
-- [ ] Nome estável: `Focus` vs `Brain.Mode`
-- [ ] Conteúdo exato do pacote `normal` (snapshot do settings atual vs lista fixa)
-- [ ] Valor default de `Focus.Default` (`normal`?)
-- [ ] `/focus férias` manual: o DOM pode “acordar” sozinho ao sair do férias OGame?
-- [ ] Override humano (tecla `w`) durante férias DOM: respeitar ou re-aplicar preset no refresh?
-- [ ] Lista fina de spenders no modo `guerra` (inclui AutoHarvest? Discovery?)
+- [ ] Modos `guerra` / `férias` (tabela fina + Autofleet)
+- [ ] `/focus` no Telegram
+- [ ] Saída DOM férias → `focus_apply(Default)`
+- [ ] Override humano durante férias DOM
 
 ## Gatilhos pra virar épico em FEATURES
 
-- [ ] Tabela preset ↔ chaves fechada para `normal` / `guerra` / `férias`
-- [ ] `focus_apply` + persist `Current`/`Default`
+- [x] `focus_apply` + persist `Current`/`Default` + perfil `general`
+- [ ] Tabela preset ↔ chaves fechada para `guerra` / `férias`
 - [ ] Saída DOM férias → aplica `Default` sem restart
 - [ ] TUI/log: `modo férias ativado` estável
 - [ ] Prova: `/focus guerra` (ou terminal) sem restart; Defender on, Autofleet off, spenders off
-
-Até lá: âncora de discussão.

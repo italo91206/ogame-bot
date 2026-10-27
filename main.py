@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 import control
 from compose import build_runtime
 from config import load_settings
+from workers_panel import WorkersPanel
 from game import (
     ResourceBook,
     browser_alive,
@@ -143,8 +144,18 @@ def main() -> None:
                 # nomes ativos no boot — heal se pause aninhado perder a lista
                 boot_active = {w.name for w in runtime.workers if w.active}
 
+                workers_ui = WorkersPanel(
+                    tui=tui,
+                    settings=settings,
+                    runtime=runtime,
+                    stubs=stubs,
+                    boot_active=boot_active,
+                    paused=paused,
+                    tick=tick,
+                    live=live,
+                )
+
                 def refresh_vacation() -> None:
-                    """1ª leitura DOM: férias → desliga todos (persist) + zero ticks."""
                     try:
                         vac = bool(is_vacation_mode(game))
                     except Exception:
@@ -155,10 +166,7 @@ def main() -> None:
                     if vac and not prev:
                         tick("conta em modo férias — desligando workers", "warn")
                         for name in control.disable_all_for_vacation(
-                            settings,
-                            runtime,
-                            boot_active=boot_active,
-                            paused=paused,
+                            settings, runtime, boot_active=boot_active, paused=paused
                         ):
                             tick(f"{name} desabilitado: modo férias", "warn")
                     elif not vac and prev:
@@ -166,28 +174,26 @@ def main() -> None:
                     if vac:
                         if not inspecting:
                             tui.set_status("férias — sem ações")
-                        # workers parados → evita DOM stale → recover spam
                         dom_health.mark_good()
 
                 def on_idle() -> None:
-                    # férias antes de qualquer outra coisa do idle
                     if not inspecting:
                         refresh_vacation()
                     ctx["resources"].push_tui(tui)
                     tui.health = dom_health.status_line()
-                    tui.set_workers(worker_rows(runtime.workers, stubs))
+                    if tui.view == "workers":
+                        workers_ui.paint()
+                    else:
+                        tui.set_workers(worker_rows(runtime.workers, stubs))
                     if tui.view == "logs":
                         tui.show_log_tail(50)
                     live.update(tui.render())
 
                 ctx["refresh"] = on_idle
-                # primeira percepção DOM (antes do loop / workers)
                 refresh_vacation()
 
                 def pause_workers() -> None:
-                    # ponytail: não clear se já pausado — recover após inspect
-                    # apagava a lista e deixava todos active=False p/ sempre
-                    # Defender fica up (paridade SleepMode / TBot) — anti-ataque
+                    # ponytail: não clear se já pausado; Defender fica up (TBot)
                     if paused:
                         return
                     for w in runtime.workers:
@@ -379,6 +385,7 @@ def main() -> None:
                 down_reason = "exit"
                 _UI_FAST = frozenset({"workers", "logs"})
                 last_heavy_idle = 0.0
+
                 try:
                     while True:
                         skip_idle = False  # seta: só live.update
@@ -393,6 +400,8 @@ def main() -> None:
                             key = keys.get()
                             sc = SHORTCUTS_INSPECT if inspecting else SHORTCUTS_RUN
                             if key == "l":
+                                if tui.view == "workers":
+                                    workers_ui.flush_draft()
                                 if tui.view == "logs":
                                     tui.hide_overlay(sc)
                                 else:
@@ -400,41 +409,12 @@ def main() -> None:
                                 keys.drain()
                             elif key == "w":
                                 if tui.view == "workers":
-                                    tui.hide_overlay(sc)
+                                    workers_ui.close(sc)
                                 else:
-                                    tui.show_workers()
+                                    workers_ui.open()
                                 keys.drain()
-                            elif tui.view == "workers" and key in ("up", "down"):
-                                # refresh leve: só seleção; não drain (fila de setas)
-                                tui.move_worker_sel(-1 if key == "up" else 1)
-                                live.update(tui.render())
+                            elif tui.view == "workers" and key and workers_ui.handle_key(key):
                                 skip_idle = True
-                            elif tui.view == "workers" and key in (" ", "\r"):
-                                msg = control.toggle_at(
-                                    settings,
-                                    runtime,
-                                    tui.worker_sel,
-                                    boot_active=boot_active,
-                                    paused=paused,
-                                )
-                                tick(msg, "ok")
-                            elif (
-                                tui.view == "workers"
-                                and key
-                                and key not in "blwr"
-                            ):
-                                idx = control.key_to_index(key)
-                                if idx is not None:
-                                    if 0 <= idx < len(tui.workers):
-                                        tui.worker_sel = idx
-                                    msg = control.toggle_at(
-                                        settings,
-                                        runtime,
-                                        idx,
-                                        boot_active=boot_active,
-                                        paused=paused,
-                                    )
-                                    tick(msg, "ok")
                             elif key == "b" and tui.view == _DASH:
                                 if inspecting:
                                     leave_inspect()
@@ -452,11 +432,13 @@ def main() -> None:
                             elif key is not None:
                                 pass  # tecla sem binding neste modo
                             else:
-                                # sem tecla: no overlay, bot no máx. 1/s (poll tecla a 50ms)
-                                bot_due = (
-                                    tui.view not in _UI_FAST
-                                    or now - last_heavy_idle >= 1.0
-                                )
+                                # sem tecla: workers = só UI; logs = idle leve 1/s
+                                if tui.view == "workers":
+                                    bot_due = False
+                                elif tui.view == "logs":
+                                    bot_due = now - last_heavy_idle >= 1.0
+                                else:
+                                    bot_due = True
                                 if bot_due:
                                     did_bot = True
                                     if dom_health.is_critical_stale():
@@ -509,6 +491,10 @@ def main() -> None:
                 except KeyboardInterrupt:
                     down_reason = "Ctrl+C"
                     tui.set_status("stopped")
+                    try:
+                        workers_ui.flush_draft()
+                    except Exception:
+                        pass
                     tick("Ctrl+C — saindo", "warn")
                     live.update(tui.render())
                     time.sleep(0.5)
@@ -517,6 +503,10 @@ def main() -> None:
                     tick(down_reason, "error")
                     raise
                 finally:
+                    try:
+                        workers_ui.flush_draft()
+                    except Exception:
+                        pass
                     try:
                         tg.notify_down(down_reason)
                     except Exception:

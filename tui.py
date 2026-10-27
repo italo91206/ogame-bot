@@ -25,7 +25,7 @@ _NORM_RE = re.compile(
 SHORTCUTS_RUN = "b browser · w workers · l logs · r reconfirm · Ctrl+C sair"
 SHORTCUTS_INSPECT = "b voltar ao bot · w workers · l logs · Ctrl+C sair"
 SHORTCUTS_LOGS = "l  fechar logs → overview"
-SHORTCUTS_WORKERS = "↑↓ navegar · Space on/off · 1-9/a/c.. · w fechar"
+SHORTCUTS_WORKERS = "↑↓ · Space/tecla = rascunho · w aplica e fecha"
 
 _ACCENT = "cyan"
 _BORDER = "dark_cyan"
@@ -82,6 +82,7 @@ class BotTUI:
     under_attack_n: int = 0  # qtd de ameaças ativas
     vacation: bool = False
     worker_sel: int = 0  # índice destacado na view workers
+    focus_name: str = "geral"
     _console: Console = field(default_factory=lambda: Console(stderr=False))
     _last_key: str = field(default="", repr=False)
     _last_repeat: int = field(default=0, repr=False)
@@ -359,7 +360,9 @@ class BotTUI:
             if n and 0 <= self.worker_sel < n
             else "—"
         )
-        parts: list = [self._header(f"WORKERS {n} · {cur} · W sai")]
+        parts: list = [
+            self._header(f"WORKERS {n} · {cur} · perfil {self.focus_name}")
+        ]
         ban = self._attack_banner()
         if ban is not None:
             parts.append(ban)
@@ -368,7 +371,7 @@ class BotTUI:
                 self._footer(),
                 Panel(
                     self._workers_table(),
-                    title="// SCHEDULER MATRIX",
+                    title=f"// SCHEDULER MATRIX · {self.focus_name}",
                     border_style=_BORDER,
                 ),
             ]
