@@ -102,7 +102,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E03-T02 | Frota auto | `done` | Primary + secondary por ratio + probe/militar/PF | `PrimaryShip`, `MinPrimaryToSend`, `PrimaryToKeep`, `SecondaryShip`, `MinSecondaryToSend`, `SecondaryToPrimaryRatio`, `TopScore` |
 | E03-T03 | Frota manual | `todo` | Composição fixa | `ManualShips.{Active,Ships.{...}}` |
 | E03-T04 | Pacing | `done` | Esperar todas / maioria; next tick = BackIn (+ pad) | `WaitForAllExpeditions`, `WaitForMajorityOfExpeditions` |
-| E03-T05 | Split systems | `todo` | Distribuir destinos em range | `SplitExpeditionsBetweenSystems.{Active,Range}` |
+| E03-T05 | System rotation | `done` | A cada N rounds (1 round = `exp_total` envios), destino `origin.system+offset`; estado em `expo_rotation.json`, reset no dia civil | `SystemRotation.{Active,RoundsPerStep}` |
 | E03-T06 | Extras | `done` | Ordem random, deut a bordo | `RandomizeOrder`, `FuelToCarry` |
 | E03-T07 | Drop → Brain | `todo` | Ao voltar expo (ou no `BackIn`), acordar smart ticket Brain | → **E04-T04** |
 | E03-T08 | Origin Type | `done` | `Origin[].Type` Planet/Moon; Origin vazio → só planetas (TBot fallback prefere planeta) | `Origin[]` |

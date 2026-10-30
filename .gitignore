@@ -7,6 +7,7 @@ settings.json
 session_*.json
 storage_state*.json
 cookies*.json
+expo_rotation.json
 *credentials*
 
 # runtime / venv / cache

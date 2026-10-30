@@ -1,10 +1,17 @@
-"""E03 Expeditions: fill expo slots; pacing + fuel (T01–T04, T06)."""
+"""E03 Expeditions: fill expo slots; pacing + fuel (T01–T04, T06) + system rotation (T05)."""
 from __future__ import annotations
 
 import math
 import random
 from typing import Any
 
+from features.expo_rotation import (
+    ROUNDS_PER_STEP,
+    dest_system,
+    load as load_rotation,
+    note_send,
+    save as save_rotation,
+)
 from game import (
     Celestial,
     FleetSlots,
@@ -244,16 +251,32 @@ class ExpeditionsWorker(Worker):
                     "warn",
                 )
                 continue
-            g, s = origin.coords.galaxy, origin.coords.system
+            g = origin.coords.galaxy
+            rot_cfg = cfg.get("SystemRotation") or {}
+            rot_on = bool(rot_cfg.get("Active"))
+            rot = load_rotation() if rot_on else None
+            s = (
+                dest_system(origin.coords.system, int(rot["offset"]))
+                if rot is not None
+                else origin.coords.system
+            )
             status = send_expedition(page, fleet, g, s, deut=fuel)
             label = _fleet_label(fleet)
             if status == "ok":
+                if rot is not None:
+                    step = int(rot_cfg.get("RoundsPerStep") or ROUNDS_PER_STEP)
+                    rot = note_send(rot, slots.exp_total, rounds_per_step=step)
+                    save_rotation(rot)
                 lo = float(cfg.get("MinWaitNextFleet") or 5)
                 hi = float(cfg.get("MaxWaitNextFleet") or 15)
                 wait = random.uniform(lo, hi)
                 self._next_wait = wait
                 self.reason = f"enviou {_fleet_label(fleet)} de {origin.label}"
-                _log(f"expo: enviou {label} {origin.label} → [{g}:{s}:16]", "ok")
+                off = f" off={rot['offset']} r={rot['rounds']}" if rot else ""
+                _log(
+                    f"expo: enviou {label} {origin.label} → [{g}:{s}:16]{off}",
+                    "ok",
+                )
                 return f"enviou {label}"
             _log(f"expo {origin.label}: {status} ({label})", "warn")
             self.reason = status

@@ -88,6 +88,10 @@
     "WaitForMajorityOfExpeditions": false,
     "RandomizeOrder": true,
     "FuelToCarry": 0,
+    "SystemRotation": {
+      "Active": false,
+      "RoundsPerStep": 2
+    },
     "PrimaryShip": "LargeCargo",
     "MinPrimaryToSend": 1,
     "PrimaryToKeep": 0,
