@@ -158,12 +158,11 @@ class AutoRepatriateWorker(Worker):
                 )
             )
 
-        sent = 0
         for c in sources:
             if runtime and not runtime.can_send_fleet(page):
-                self.reason = f"slots · enviou {sent}"
-                _log(f"repatriate: sem slot (enviou {sent})", "warn")
-                return f"slots · {sent} envios" if sent else "sem slot"
+                self.reason = "sem slot"
+                _log("repatriate: sem slot", "warn")
+                return "sem slot"
 
             switch_celestial(page, c)
             if skip_in and has_incoming_transport(
@@ -193,8 +192,8 @@ class AutoRepatriateWorker(Worker):
 
             open_component(page, "fleetdispatch")
             if not slots_available(parse_slots(page), leave_slots):
-                self.reason = f"slots · enviou {sent}"
-                return f"slots · {sent} envios" if sent else "sem slot"
+                self.reason = "sem slot"
+                return "sem slot"
 
             ships = parse_ships(page)
             have = ships.get(sid, {}).get("number", 0)
@@ -221,18 +220,20 @@ class AutoRepatriateWorker(Worker):
                 deut=d,
             )
             if status == "ok":
-                sent += 1
+                # I-03: 1 send/tick (como expo)
                 _log(
                     f"repatriate: {c.label} → [{tg}:{ts}:{tp}] "
                     f"{n}x{cargo_name} M{m}+C{cr}+D{d}",
                     "ok",
                 )
-            else:
-                _log(f"repatriate {c.label}: {status}", "warn")
-                self.reason = status
-                return status if not sent else f"{sent} ok · {status}"
+                self._next_wait = random.uniform(5, 15)
+                self.reason = f"enviou {c.label}"
+                return self.reason
+            _log(f"repatriate {c.label}: {status}", "warn")
+            self.reason = status
+            return status
 
-        self.reason = f"enviou {sent}" if sent else "nada a recolher"
+        self.reason = "nada a recolher"
         return self.reason
 
 

@@ -130,10 +130,9 @@ class AutoDiscoveryWorker(Worker):
             _log("discovery: recursos insuficientes", "warn")
             return self.reason
 
-        sent = 0
         fails = 0
         for dest in destinations(origin.coords):
-            if out + sent >= max_slots:
+            if out >= max_slots:
                 break
             if fails >= max_fail:
                 break
@@ -148,21 +147,18 @@ class AutoDiscoveryWorker(Worker):
             status = send_discovery(page, dest.galaxy, dest.system, dest.position)
             tag = f"{dest.galaxy}:{dest.system}:{dest.position}"
             if status == "ok":
-                sent += 1
+                # I-03: 1 send/tick (como expo)
                 self._blacklist[key] = now + 7 * DAY_S
                 _log(f"discovery: ok → {tag}", "ok")
-            else:
-                fails += 1
-                self._blacklist[key] = now + DAY_S
-                _log(f"discovery: fail {status} → {tag}", "warn")
+                self._next_wait = random.uniform(5, 15)
+                self.reason = f"enviou → {tag}"
+                return self.reason
+            fails += 1
+            self._blacklist[key] = now + DAY_S
+            _log(f"discovery: fail {status} → {tag}", "warn")
 
         self._next_wait = wait
-        if sent:
-            self.reason = f"{sent} sent · fail {fails}"
-        elif fails:
-            self.reason = f"fail {fails}"
-        else:
-            self.reason = "nada (blacklist/slots)"
+        self.reason = f"fail {fails}" if fails else "nada (blacklist/slots)"
         return self.reason
 
 

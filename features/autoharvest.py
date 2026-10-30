@@ -274,7 +274,6 @@ class AutoHarvestWorker(Worker):
             self.reason = "sem DF"
             return self.reason
 
-        sent = 0
         skipped = 0
         for job in jobs:
             if harvest_en_route(page, job.dest):
@@ -291,9 +290,7 @@ class AutoHarvestWorker(Worker):
             if not slots_available(slots, leave):
                 back = harvest_back_in(page)
                 self._next_wait = (back + random.uniform(5, 20)) if back else wait
-                self.reason = f"sem slot · enviou {sent}"
-                if sent == 0:
-                    self.reason = f"sem slot frota ({slots.free}/{slots.total})"
+                self.reason = f"sem slot frota ({slots.free}/{slots.total})"
                 return self.reason
 
             picked = pick_origin(job, page)
@@ -326,26 +323,24 @@ class AutoHarvestWorker(Worker):
             tag = f"{job.dest.galaxy}:{job.dest.system}:{job.dest.position}"
             ship = "PF" if job.ship_id == SHIP_PF else "recy"
             if status == "ok":
-                sent += 1
+                # I-03: 1 send/tick (como expo)
                 _log(
                     f"harvest: {origin.label}→{tag} {n_send}{ship} ({job.total})",
                     "ok",
                 )
-            else:
-                skipped += 1
-                _log(f"harvest: fail {status} → {tag}", "warn")
-                if "slot" in status.lower():
-                    back = harvest_back_in(page)
-                    self._next_wait = (back + random.uniform(5, 20)) if back else wait
-                    self.reason = f"sem slot · enviou {sent}"
-                    return self.reason
+                self._next_wait = random.uniform(5, 15)
+                self.reason = f"enviou {n_send}{ship} → {tag}"
+                return self.reason
+            skipped += 1
+            _log(f"harvest: fail {status} → {tag}", "warn")
+            if "slot" in status.lower():
+                back = harvest_back_in(page)
+                self._next_wait = (back + random.uniform(5, 20)) if back else wait
+                self.reason = f"sem slot · fail"
+                return self.reason
 
-        back = harvest_back_in(page) if sent else None
-        self._next_wait = (back + random.uniform(5, 15)) if back else wait
-        if sent:
-            self.reason = f"{sent} sent · skip {skipped}"
-        else:
-            self.reason = f"nada · skip {skipped}" if skipped else "sem DF"
+        self._next_wait = wait
+        self.reason = f"nada · skip {skipped}" if skipped else "sem DF"
         return self.reason
 
 

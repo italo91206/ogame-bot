@@ -194,7 +194,7 @@ class AutoFarmWorker(Worker):
             return self.reason
 
         num_probes = max(1, int(_cfg(cfg, "NumProbes")))
-        max_probe = max(1, int(_cfg(cfg, "TargetsProbedBeforeAttack")))
+        # TargetsProbedBeforeAttack → E12-T02; I-03: 1 spy/tick (como expo)
         excludes = cfg.get("Exclude") or []
         origins_cfg = cfg.get("Origin") or []
 
@@ -211,14 +211,11 @@ class AutoFarmWorker(Worker):
             ships = parse_ships(page)
             self._probe_stock[o.id] = int(ships.get(PROBE_ID, {}).get("number") or 0)
 
-        probed = 0
         scanned = 0
         nsys = len(systems)
         start_i = self._scan_i % nsys
 
         for step in range(nsys):
-            if probed >= max_probe:
-                break
             if not slots_available(parse_slots(page), leave):
                 break
             gi = (start_i + step) % nsys
@@ -236,8 +233,6 @@ class AutoFarmWorker(Worker):
             time.sleep(random.uniform(0.4, 1.2))
 
             for gt in found:
-                if probed >= max_probe:
-                    break
                 if is_excluded(gt.coords, excludes):
                     continue
                 ft = self._targets.get(_key(gt.coords))
@@ -273,22 +268,22 @@ class AutoFarmWorker(Worker):
                     self._probe_stock[origin.id] = max(
                         0, self._probe_stock.get(origin.id, 0) - num_probes
                     )
-                    probed += 1
                     _log(
                         f"farm: spy {num_probes}p {origin.label} → {gt.coords}",
                         "ok",
                     )
-                    time.sleep(random.uniform(1.0, 3.0))
-                else:
-                    _log(f"farm: spy {gt.coords} {status}", "warn")
-                    self._next_wait = random.uniform(20, 60)
-                    self.reason = status
-                    return status
+                    self._next_wait = random.uniform(5, 15)
+                    self.reason = f"spy → {gt.coords} scan {scanned} sys"
+                    return self.reason
+                _log(f"farm: spy {gt.coords} {status}", "warn")
+                self._next_wait = random.uniform(20, 60)
+                self.reason = status
+                return status
 
         lo = float(_cfg(cfg, "CheckIntervalMin")) * 60
         hi = float(_cfg(cfg, "CheckIntervalMax")) * 60
         self._next_wait = random.uniform(lo, max(lo, hi))
-        self.reason = f"spy {probed}/{max_probe} scan {scanned} sys"
+        self.reason = f"nada · scan {scanned} sys"
         _log(f"farm: {self.reason}", "info")
         return self.reason
 
