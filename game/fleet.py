@@ -60,11 +60,24 @@ def fleet_speed_peaceful(page: Page) -> int:
 
 
 def is_discoverer(page: Page) -> bool:
-    title = ""
+    """True if player class is Discoverer. Meta id 3 / sprite.explorer (PT: Descobridor)."""
+    # 1=Collector, 2=General, 3=Discoverer — locale-proof
+    if _meta(page, "ogame-player-characterclass-id") == "3":
+        return True
+    if page.locator("#characterclass .sprite.explorer").count():
+        return True
     loc = page.locator("#characterclass a, #characterclass")
-    if loc.count():
-        title = loc.first.get_attribute("title") or ""
-    return "Discoverer" in title or "Explorador" in title or "Entdeck" in title
+    if not loc.count():
+        return False
+    tip = (
+        loc.first.get_attribute("data-tooltip-title")
+        or loc.first.get_attribute("title")
+        or ""
+    )
+    return any(
+        s in tip
+        for s in ("Discoverer", "Descobridor", "Explorador", "Entdeck")
+    )
 
 
 def parse_ships(page: Page) -> dict[int, dict[str, int]]:
@@ -409,7 +422,11 @@ def freight_cap(
     eco_speed: int,
     lf_resources_bonus: float = 0.0,
 ) -> int:
-    """TBot CalcIdealExpeditionShips freightCap."""
+    """TBot CalcIdealExpeditionShips freightCap.
+
+    Discoverer ×3 = class 1.5 × Pathfinder 2 (PF assumed; pick_extras adds 1 PF).
+    Non-disco ×2 = Pathfinder only (no eco).
+    """
     if top_score < 10_000:
         cap = 40_000
     elif top_score < 100_000:
@@ -455,6 +472,9 @@ def pick_extras(available: dict[int, dict[str, int]], expos: int) -> dict[int, i
 
 if __name__ == "__main__":
     assert MISSION_EXPEDITION == 15
-    assert freight_cap(6_103_492, discoverer=False, eco_speed=1) > 0
+    assert freight_cap(6_103_492, discoverer=False, eco_speed=1) == 4_800_000  # 2.4M×2
+    # TopScore 76M band 4.2M; disco×eco8×3 (1.5 class × 2 PF)
+    assert freight_cap(76_000_000, discoverer=True, eco_speed=8) == 100_800_000
+    assert freight_cap(76_000_000, discoverer=False, eco_speed=8) == 8_400_000
     print("fleet ok")
 

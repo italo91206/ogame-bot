@@ -274,7 +274,8 @@ class ExpeditionsWorker(Worker):
                 self.reason = f"enviou {_fleet_label(fleet)} de {origin.label}"
                 off = f" off={rot['offset']} r={rot['rounds']}" if rot else ""
                 _log(
-                    f"expo: enviou {label} {origin.label} → [{g}:{s}:16]{off}",
+                    f"expo: enviou {label} {origin.label} → [{g}:{s}:16] "
+                    f"disc={int(disc)} eco={eco}{off}",
                     "ok",
                 )
                 return f"enviou {label}"
