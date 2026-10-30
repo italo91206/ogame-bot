@@ -191,13 +191,6 @@ def _coords_pair(row_html: str) -> tuple[Coords | None, Coords | None]:
     return origin, dest
 
 
-def _event_list_html(page: Page) -> str:
-    base = page.url.split("?")[0]
-    url = f"{base}?page=componentOnly&component=eventList&ajax=1"
-    resp = page.request.get(url, headers={"X-Requested-With": "XMLHttpRequest"})
-    return resp.text() or ""
-
-
 def attack_alert_lit(page: Page) -> bool:
     """#attack_alert.soon|today — UI diz Ataque! mesmo com eventList AJAX vazio."""
     try:
@@ -212,73 +205,6 @@ def attack_alert_lit(page: Page) -> bool:
         )
     except Exception:
         return False
-
-
-def _dom_event_rows_html(page: Page) -> str:
-    """Lê tr.eventFleet já no DOM (overview SSR / eventbox aberto)."""
-    try:
-        return (
-            page.evaluate(
-                """() => {
-                  const rows = [...document.querySelectorAll(
-                    'tr.eventFleet, tr.allianceAttack'
-                  )];
-                  if (!rows.length) {
-                    const w = document.querySelector('#eventListWrap');
-                    return w ? w.outerHTML : '';
-                  }
-                  return '<div id="eventListWrap"><table id="eventContent"><tbody>'
-                    + rows.map(r => r.outerHTML).join('')
-                    + '</tbody></table></div>';
-                }"""
-            )
-            or ""
-        )
-    except Exception:
-        return ""
-
-
-def _refresh_event_list_in_page(page: Page) -> str:
-    """Injeta AJAX eventList no DOM via fetch da página (cookies/JS do jogo)."""
-    try:
-        return (
-            page.evaluate(
-                """async () => {
-                  const base = location.href.split('?')[0];
-                  const url = base + '?page=componentOnly&component=eventList&ajax=1';
-                  let html = '';
-                  try {
-                    const r = await fetch(url, {
-                      headers: {'X-Requested-With': 'XMLHttpRequest'},
-                      credentials: 'same-origin',
-                    });
-                    html = await r.text();
-                    const box = document.querySelector('#eventboxContent');
-                    if (box && html) box.innerHTML = html;
-                  } catch (e) {}
-                  try {
-                    if (typeof refreshFleetEvents === 'function') refreshFleetEvents(true);
-                    else if (typeof getAjaxEventbox === 'function') getAjaxEventbox();
-                  } catch (e) {}
-                  await new Promise(r => setTimeout(r, 900));
-                  const rows = [...document.querySelectorAll(
-                    'tr.eventFleet, tr.allianceAttack'
-                  )];
-                  if (rows.length) {
-                    return '<div id="eventListWrap"><table id="eventContent"><tbody>'
-                      + rows.map(r => r.outerHTML).join('')
-                      + '</tbody></table></div>';
-                  }
-                  if (html && (html.includes('eventListWrap') || html.includes('eventFleet')))
-                    return html;
-                  const w = document.querySelector('#eventListWrap');
-                  return w ? w.outerHTML : (html || '');
-                }"""
-            )
-            or ""
-        )
-    except Exception:
-        return ""
 
 
 def _coords_match(
@@ -350,8 +276,10 @@ def count_own_ships_in_flight(
     *,
     moon: bool = False,
 ) -> int:
+    from .event_list import first_event_list_html
+
     return count_own_ships_in_flight_html(
-        _event_list_html(page),
+        first_event_list_html(page),
         ship_id,
         galaxy,
         system,
@@ -454,37 +382,10 @@ def list_hostile_attacks(page: Page) -> list[HostileAttack]:
     enquanto o overview/#attack_alert já mostram o ataque — daí o bot
     mentia `safe`. Ordem: AJAX → DOM atual → refresh in-page → overview GET.
     """
-    sources: list[str] = []
-    try:
-        sources.append(_event_list_html(page))
-    except Exception:
-        sources.append("")
+    from .event_list import event_list_sources
 
-    for html in sources:
+    for html in event_list_sources(page):
         atks = parse_hostile_attacks_html(html)
         if atks:
             return atks
-
-    dom = _dom_event_rows_html(page)
-    atks = parse_hostile_attacks_html(dom)
-    if atks:
-        return atks
-
-    refreshed = _refresh_event_list_in_page(page)
-    atks = parse_hostile_attacks_html(refreshed)
-    if atks:
-        return atks
-
-    # overview SSR às vezes embute o eventbox (sem navegar a page atual)
-    try:
-        base = page.url.split("?")[0]
-        ov = (
-            page.request.get(f"{base}?page=ingame&component=overview").text() or ""
-        )
-        atks = parse_hostile_attacks_html(ov)
-        if atks:
-            return atks
-    except Exception:
-        pass
-
     return []

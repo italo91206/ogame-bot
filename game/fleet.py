@@ -168,14 +168,9 @@ def latest_outbound_fleet_id(
     mission: int,
 ) -> int | None:
     """Maior eventRow id outbound matching dest+mission (pós-send)."""
-    base = page.url.split("?")[0]
-    url = f"{base}?page=componentOnly&component=eventList&ajax=1"
-    try:
-        html = page.request.get(
-            url, headers={"X-Requested-With": "XMLHttpRequest"}
-        ).text() or ""
-    except Exception:
-        html = page.content()
+    from .event_list import first_event_list_html
+
+    html = first_event_list_html(page)
     best: int | None = None
     for m in re.finditer(
         rf'<tr[^>]*id="eventRow-(\d+)"[^>]*data-mission-type="{int(mission)}"[^>]*>'
@@ -248,37 +243,27 @@ def recall_all_fleets(page: Page) -> tuple[int, int]:
     return ok, fail
 
 
-def _event_list_html(page: Page) -> str:
-    base = page.url.split("?")[0]
-    url = f"{base}?page=componentOnly&component=eventList&ajax=1"
-    try:
-        return page.request.get(
-            url, headers={"X-Requested-With": "XMLHttpRequest"}
-        ).text() or ""
-    except Exception:
-        return page.content()
-
-
 def transport_arrive_in(
     page: Page, galaxy: int, system: int, position: int, *, moon: bool
 ) -> float | None:
     """Seconds until earliest inbound transport (mission 3 outbound) to dest."""
+    from .event_list import (
+        first_event_list_html,
+        iter_event_fleet_rows,
+        row_arrival_eta,
+        row_dest_coords,
+        row_is_return,
+        row_mission,
+    )
+
     now = time.time()
     best: float | None = None
-    html = _event_list_html(page)
-    for m in re.finditer(
-        r'<tr[^>]*data-mission-type="3"[^>]*>.*?</tr>',
-        html,
-        re.I | re.S,
-    ):
-        row = m.group(0)
-        if re.search(r'data-return-flight="(?:true|1)"', row, re.I):
+    html = first_event_list_html(page)
+    for row in iter_event_fleet_rows(html):
+        if row_mission(row) != MISSION_TRANSPORT or row_is_return(row):
             continue
-        coords = _COORDS_RE.findall(row)
-        if not coords:
-            continue
-        g, s, p = (int(x) for x in coords[-1])
-        if g != galaxy or s != system or p != position:
+        coords = row_dest_coords(row)
+        if coords != (galaxy, system, position):
             continue
         dest_fleet = ""
         dm = re.search(r'class="[^"]*destFleet[^"]*"[^>]*>([^<]*)', row, re.I)
@@ -287,50 +272,8 @@ def transport_arrive_in(
         is_moon = "moon" in dest_fleet.lower() or "lua" in dest_fleet.lower()
         if is_moon != moon:
             continue
-        am = re.search(r'data-arrival-time="(\d+)"', row, re.I)
-        if not am:
-            continue
-        eta = int(am.group(1)) - now
-        if eta < 0:
-            continue
-        if best is None or eta < best:
-            best = eta
-    if best is not None:
-        return best
-    # fallback: live DOM (same page may already have eventbox)
-    rows = page.locator('tr.eventFleet[data-mission-type="3"]')
-    for i in range(rows.count()):
-        el = rows.nth(i)
-        ret = el.get_attribute("data-return-flight") or ""
-        if ret in ("true", "1"):
-            continue
-        dest = (
-            el.locator("td.destCoords").inner_text()
-            if el.locator("td.destCoords").count()
-            else ""
-        )
-        cm = _COORDS_RE.search(dest)
-        if not cm:
-            continue
-        if (
-            int(cm.group(1)) != galaxy
-            or int(cm.group(2)) != system
-            or int(cm.group(3)) != position
-        ):
-            continue
-        dest_fleet = (
-            el.locator("td.destFleet").inner_text()
-            if el.locator("td.destFleet").count()
-            else ""
-        )
-        is_moon = "moon" in dest_fleet.lower() or "lua" in dest_fleet.lower()
-        if is_moon != moon:
-            continue
-        arrival = el.get_attribute("data-arrival-time")
-        if not arrival or not arrival.isdigit():
-            continue
-        eta = int(arrival) - now
-        if eta < 0:
+        eta = row_arrival_eta(row, now)
+        if eta is None:
             continue
         if best is None or eta < best:
             best = eta
@@ -345,27 +288,10 @@ def has_incoming_transport(
 
 
 def expo_back_in(page: Page, *, latest: bool = False) -> float | None:
-    """Seconds until earliest (or latest) expedition return."""
-    now = time.time()
-    best: float | None = None
-    rows = page.locator(
-        'tr.eventFleet[data-mission-type="15"], '
-        'div.fleetDetails[data-mission-type="15"]'
-    )
-    for i in range(rows.count()):
-        el = rows.nth(i)
-        arrival = el.get_attribute("data-arrival-time")
-        if not arrival or not arrival.isdigit():
-            continue
-        eta = int(arrival) - now
-        if eta < 0:
-            continue
-        ret = el.get_attribute("data-return-flight") or ""
-        # prefer return legs; outbound still useful as lower bound
-        weight = eta if ret in ("true", "1") else eta + 3600
-        if best is None or (weight > best if latest else weight < best):
-            best = weight
-    return best
+    """Seconds until earliest (or latest) expedition return (AJAX HTML path)."""
+    from .event_list import expo_back_in_html, first_event_list_html
+
+    return expo_back_in_html(first_event_list_html(page), latest=latest)
 
 
 def earliest_expo_back_in(page: Page) -> float | None:
@@ -374,21 +300,9 @@ def earliest_expo_back_in(page: Page) -> float | None:
 
 def fleets_max_eta(page: Page) -> float:
     """Max ETA (s) of non-Discovery eventFleet rows; 0 = nenhuma frota."""
-    now = time.time()
-    delay = 0.0
-    rows = page.locator("tr.eventFleet")
-    for i in range(rows.count()):
-        el = rows.nth(i)
-        mission = el.get_attribute("data-mission-type") or ""
-        if mission == str(MISSION_DISCOVERY):
-            continue
-        arrival = el.get_attribute("data-arrival-time")
-        if not arrival or not arrival.isdigit():
-            continue
-        eta = int(arrival) - now
-        if eta > 0:
-            delay = max(delay, eta)
-    return delay
+    from .event_list import first_event_list_html, fleets_max_eta_html
+
+    return fleets_max_eta_html(first_event_list_html(page))
 
 
 def fleets_delay_until_sleep(page: Page, sleep_secs: float) -> float:
@@ -396,23 +310,9 @@ def fleets_delay_until_sleep(page: Page, sleep_secs: float) -> float:
 
     Outbound legs delay until dest arrival; return legs appear next tick (TBot BackIn).
     """
-    if sleep_secs <= 0:
-        return 0.0
-    now = time.time()
-    delay = 0.0
-    rows = page.locator("tr.eventFleet")
-    for i in range(rows.count()):
-        el = rows.nth(i)
-        mission = el.get_attribute("data-mission-type") or ""
-        if mission == str(MISSION_DISCOVERY):
-            continue
-        arrival = el.get_attribute("data-arrival-time")
-        if not arrival or not arrival.isdigit():
-            continue
-        eta = int(arrival) - now
-        if 0 <= eta <= sleep_secs:
-            delay = max(delay, eta)
-    return delay
+    from .event_list import first_event_list_html, fleets_delay_until_sleep_html
+
+    return fleets_delay_until_sleep_html(first_event_list_html(page), sleep_secs)
 
 
 def freight_cap(
