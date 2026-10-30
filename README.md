@@ -216,7 +216,7 @@ Auto-ping a cada `TelegramAutoPing.EveryHours` (se ativo).
 | `telegram_notify.py` | notify + polling de comandos |
 | `settings.example.json` | template dos workers (copie → `settings.json`) |
 | `.env` | credenciais (não versionar) |
-| `docs/` | FOCUS, Telegram, handoffs |
+| `docs/` | Telegram, handoffs, guias |
 | `FEATURES.md` | plano / paridade TBot |
 
 ---

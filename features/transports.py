@@ -66,8 +66,10 @@ def overflow_payload(
         ostore = int(origin_storage.get(k, 0))
         ohave = int(origin_have.get(k, 0))
         if factor > 0 and ostore > 0 and ohave > ostore * factor:
-            room = max(0, int(dest_storage.get(k, 0)) - int(dest_have.get(k, 0)))
-            out[k] = max(n, room)
+            dstore = int(dest_storage.get(k, 0))
+            room = max(0, dstore - int(dest_have.get(k, 0)))
+            # fill dest up to storage; never ship past room (bundled need can exceed)
+            out[k] = room if dstore > 0 else n
         else:
             out[k] = n
     return out
@@ -144,17 +146,31 @@ def send_miner_transport(
     cost: dict[str, int],
     *,
     leave_slots: int = 1,
+    parts: list | None = None,
+    out_tags: list | None = None,
+    reasons: list | None = None,
 ) -> str:
-    """Origin → dest with missing resources for `cost`. Short status string."""
+    """Origin → dest with missing resources for `cost`. Short status string.
+
+    If `parts` (from bundle_parallel_cost) is set, TB-02 trims low-prio slots when
+    Origin cannot fund the full sum; `out_tags` is updated in-place when given.
+    `reasons` (optional) collects file-only decision crumbs.
+    """
+    from features.transport_bundle import note_reason
+
+    def _done(status: str) -> str:
+        note_reason(reasons, f"send={status}")
+        return status
+
     tcfg = brain.get("Transports") or {}
     if not (brain.get("Active") and tcfg.get("Active")):
-        return "off"
+        return _done("off")
 
     origin = resolve_origin(page, tcfg.get("Origin") or {})
     if origin is None:
-        return "sem Origin"
+        return _done("sem Origin")
     if origin.id == dest.id:
-        return "mesmo celestial"
+        return _done("mesmo celestial")
 
     # need dest stock from current page (caller should be on dest)
     res = current_resources(page)
@@ -166,7 +182,7 @@ def send_miner_transport(
     miss = missing_resources(cost, have)
     m, c, d = miss["metal"], miss["crystal"], miss["deut"]
     if m + c + d <= 0:
-        return "noop"
+        return _done("noop")
 
     if has_incoming_transport(
         page,
@@ -175,14 +191,14 @@ def send_miner_transport(
         dest.coords.position,
         moon=dest.coords.type == "Moon",
     ):
-        return "incoming"
+        return _done("incoming")
 
     dest_stor = resource_storage(page)
 
     switch_celestial(page, origin)
     open_component(page, "fleetdispatch")
     if not slots_available(fleet_slots(page), leave_slots):
-        return "sem slot"
+        return _done("sem slot")
 
     ores = current_resources(page)
     om = parse_ogame_int(ores.get("metal", "0"))
@@ -190,6 +206,19 @@ def send_miner_transport(
     od_raw = parse_ogame_int(ores.get("deut", "0"))
     leave = int(tcfg.get("DeutToLeave") or 0)
     od = max(0, od_raw - leave) if leave > 0 else od_raw
+
+    if parts:
+        from features.transport_bundle import clamp_cost_to_storage, fit_parts_to_origin
+
+        cost, tags = fit_parts_to_origin(
+            parts, have, {"metal": om, "crystal": oc, "deut": od}, reasons
+        )
+        cost = clamp_cost_to_storage(cost, dest_stor, reasons)
+        if out_tags is not None:
+            out_tags[:] = tags
+        miss = missing_resources(cost, have)
+        if miss["metal"] + miss["crystal"] + miss["deut"] <= 0:
+            return _done("noop")
 
     factor = float(tcfg.get("OverflowFactor", 2) or 0)
     filled = overflow_payload(
@@ -208,7 +237,7 @@ def send_miner_transport(
         m, c, d = min(m, om), min(c, oc), min(d, od)
 
     if m + c + d <= 0 or om < m or oc < c or od < d:
-        return "origem sem recurso"
+        return _done("origem sem recurso")
 
     cargo_name = str(tcfg.get("CargoType") or "LargeCargo")
     sid = NAME_TO_ID.get(cargo_name) or NAME_TO_ID["LargeCargo"]
@@ -218,10 +247,10 @@ def send_miner_transport(
     total = m + c + d
     n = ships_for_payload(total, cargo_per, have_n)
     if n <= 0:
-        return "sem cargos"
+        return _done("sem cargos")
     m, c, d = clamp_payload(m, c, d, n * cargo_per)
     if m + c + d <= 0:
-        return "payload vazio"
+        return _done("payload vazio")
 
     dest_type = DEST_MOON if dest.coords.type == "Moon" else DEST_PLANET
     status = send_fleet(
@@ -238,8 +267,8 @@ def send_miner_transport(
     )
     if status == "ok":
         tag = "+fill" if used_fill else ""
-        return f"ok {n}x{cargo_name} M{m}+C{c}+D{d}{tag}"
-    return status
+        return _done(f"ok {n}x{cargo_name} M{m}+C{c}+D{d}{tag}")
+    return _done(status)
 
 
 if __name__ == "__main__":
@@ -249,7 +278,7 @@ if __name__ == "__main__":
     ) == {"metal": 800, "crystal": 0, "deut": 100}
     assert round_resources(1, 0, 1500) == (1000, 0, 2000)
     assert round_resources(0, 0, 0) == (0, 0, 0)
-    # origin overflowing metal → fill dest metal room
+    # origin overflowing metal → fill dest metal room (crystal not overflowing)
     assert overflow_payload(
         {"metal": 100, "crystal": 50, "deut": 0},
         {"metal": 0, "crystal": 0, "deut": 0},
@@ -258,6 +287,15 @@ if __name__ == "__main__":
         {"metal": 10_000, "crystal": 10_000, "deut": 10_000},
         2.0,
     ) == {"metal": 10_000, "crystal": 50, "deut": 0}
+    # overflow + bundled need > room → still cap at room
+    assert overflow_payload(
+        {"metal": 50_000, "crystal": 0, "deut": 0},
+        {"metal": 2_000, "crystal": 0, "deut": 0},
+        {"metal": 10_000, "crystal": 0, "deut": 0},
+        {"metal": 1_000_000, "crystal": 0, "deut": 0},
+        {"metal": 10_000, "crystal": 0, "deut": 0},
+        2.0,
+    ) == {"metal": 8_000, "crystal": 0, "deut": 0}
     # factor off → exact need
     assert overflow_payload(
         {"metal": 100, "crystal": 0, "deut": 0},

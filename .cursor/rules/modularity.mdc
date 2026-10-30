@@ -13,7 +13,7 @@ Leia `AGENTS.md` e `FEATURES.md` antes de implementar features.
 - `runtime.py` = agenda workers
 - `features/` = decisão + tick (1 épico ≈ 1 módulo)
 - `main.py` / `compose.py` = composição only
-- `docs/` = artefatos (FOCUS, guias, handoffs) — não código
+- `docs/` = artefatos (guias, handoffs) — não código
 
 Não misturar pick/caps de Brain com login/fingerprint. Não copiar regex DOM nos workers.
 

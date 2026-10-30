@@ -2,7 +2,7 @@
 
 Plano top-level para implementação futura. Features mapeadas do **TBot** (.NET + ogamed) para este projeto (Playwright / Python).
 
-Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 done**, **E02 T01+T02+T04+T05 done**, **E03 T01+T02+T04+T06+T08 done**, **E04 T01+T02+T04 done** (Transports + ArriveIn wake), **E05 core + T09+T10+T11 done**, **E06 core + T03+T04+T05 done**, **E07 core + T04+T05 done**, **E08 core + T05+T06 done**, **E09 done**, **E10 done**, **E13 T01 done**, **E14 T01+T04 done** (DOIR priorities / E14 abandon+intensive ainda `todo`).
+Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 done**, **E02 T01+T02+T04+T05 done**, **E03 T01+T02+T04+T06+T08 done**, **E04 T01+T02+T04+T05 done** (Transports + ArriveIn + bundle filas paralelas), **E05 core + T09+T10+T11 done**, **E06 core + T03+T04+T05 done**, **E07 core + T04+T05 done**, **E08 core + T05+T06 done**, **E09 done**, **E10 done**, **E13 T01 done**, **E14 T01+T04 done** (DOIR priorities / E14 abandon+intensive ainda `todo`).
 
 ---
 
@@ -14,7 +14,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | [E01](#e01--sleep-mode--fleet-save) | SleepMode / FleetSave `T01–T03+T06 done` | janela de sono, ghost fleet, `/sleep` |
 | [E02](#e02--defender) | Defender `T01+T02+T04+T05+T06+T09 done` | anti-ataque, evacuate, spy/msg |
 | [E03](#e03--expeditions) | Expeditions `T01+T02+T04+T06+T08 done` | manter slots de expo cheios |
-| [E04](#e04--brain--orquestração) | Brain (orquestração) `T02+T04 done` | master switch + transports + ArriveIn |
+| [E04](#e04--brain--orquestração) | Brain (orquestração) `T02+T04+T05 done` | master switch + transports + ArriveIn + bundle |
 | [E05](#e05--brain--automine) | Brain · AutoMine `core + T09+T10 done` | minas/facilidades/lua (+ parity `todo`) |
 | [E06](#e06--brain--lifeform-automine) | Brain · Lifeform AutoMine `core + T03 done` | prédios LF + food/pop/T2/T3 |
 | [E07](#e07--brain--lifeform-autoresearch) | Brain · Lifeform AutoResearch `core done` | techs LF |
@@ -109,7 +109,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 
 ---
 
-## E04 — Brain · Orquestração `T02 done`
+## E04 — Brain · Orquestração `T02+T04+T05 done`
 
 **O que é:** master switch do “cérebro” de economia.  
 **O que faz:** habilita subfeatures Brain; serializa jobs Brain (1 por vez); transports compartilhados para cobrir custo de build/research.
@@ -120,6 +120,7 @@ Status atual do projeto: **E00 done** (T09 Overview wake), **E01 T01+T02+T03 don
 | E04-T02 | Transports shared | `done` | Enviar recursos faltantes do Origin; se Origin > storage×`OverflowFactor`, enche armazém do dest (`transports.py`); Origin/dest `Type` Moon ok; `DeutToLeave` sempre no Origin (≠ `DeutToLeaveOnMoons`) | `Brain.Transports.{Active,CargoType,DeutToLeave,RoundResources,OverflowFactor,Origin}` |
 | E04-T03 | Brain semaphore | `todo` | Garantir um job Brain por vez | — (runtime) |
 | E04-T04 | Drop / fleet wake | `done` | Pós-transport: next tick = `ArriveIn`+jitter (`transport_retry_wait`); wait de recurso = `min(ETA, ArriveIn)` (`clamp_wait_to_incoming`); Overview drop wake já em **E00-T09**. BackIn expo/farm → **E03-T07** / **E12-T06** | — (API interna) |
+| E04-T05 | Bundle filas paralelas | `done` | No transport, somar custos das filas idle (clássico + research se Target=dest + LF prédio + LF tech), N∈{1..4} best-effort; robots/nanites bloqueiam LF prédio; soma clampada ao storage dest; lookahead clássico se `2×flight ≥ buildTime` (`transport_bundle.py`). Checkpoint / follow-ups: [`docs/TRANSPORT_BUNDLE.md`](docs/TRANSPORT_BUNDLE.md) | — (API interna) |
 
 ---
 

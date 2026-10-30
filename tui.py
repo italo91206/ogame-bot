@@ -96,6 +96,8 @@ class BotTUI:
             ts, _ = self.logs[0]
             base = _NORM_RE.sub("", msg).rstrip()
             self.logs[0] = (ts, f"[{level}] {base} ({self._last_repeat})")
+            # always mirror to file (dedup is TUI-only)
+            filelog.write(f"{base} ({self._last_repeat})", level)
             self._maybe_action(msg)
             return
         self._last_key = key
@@ -103,6 +105,10 @@ class BotTUI:
         self.logs.appendleft((datetime.now().strftime("%H:%M:%S"), f"[{level}] {msg}"))
         filelog.write(msg, level)
         self._maybe_action(msg)
+
+    def log_file(self, msg: str, level: str = "detail") -> None:
+        """File-only decision/debug line (não aparece no TUI)."""
+        filelog.write(mask_seconds_in_text(msg), level)
 
     def _maybe_action(self, msg: str) -> None:
         """Se o log cita um celestial conhecido, grava última ação nele."""

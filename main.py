@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 import control
 from compose import build_runtime
 from config import load_settings
+from focus import apply_profile, current_name
 from workers_panel import WorkersPanel
 from game import (
     ResourceBook,
@@ -51,12 +52,15 @@ def main() -> None:
     tui.set_status("boot")
 
     runtime = build_runtime(settings)
+    boot_profile = current_name(settings)
+    apply_profile(settings, runtime, boot_profile)
     stubs: list[WorkerRow] = []
     tui.set_workers(worker_rows(runtime.workers, stubs))
 
     with tui.live() as live:
         play_boot(tui, live, universe=uni)
         tui.set_status("login")
+        tui.log(f"perfil '{boot_profile}' (boot)", "ok")
         tui.log("iniciando browser" + (" headless" if headless else ""))
         live.update(tui.render())
 

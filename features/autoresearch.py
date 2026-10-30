@@ -13,9 +13,9 @@ from features.autoresearch_pick import (
     pick_next,
     price,
 )
+from features.transport_bundle import KIND_RESEARCH, send_bundled_transport
 from features.transports import (
     clamp_wait_to_incoming,
-    send_miner_transport,
     transport_retry_wait,
     transports_enabled,
 )
@@ -196,16 +196,24 @@ def research_once(
                 open_component(page, "research")
             cost = peek_tech_costs(page, want) or price(want, nxt)
             if cost:
-                tr = send_miner_transport(
-                    page, brain, celestial, cost, leave_slots=leave_slots
+                seed_tag = f"{label(want)}→{nxt}"
+                tr, tags = send_bundled_transport(
+                    page,
+                    celestial,
+                    brain,
+                    cost,
+                    seed_kind=KIND_RESEARCH,
+                    seed_tag=seed_tag,
+                    leave_slots=leave_slots,
                 )
                 if tr.startswith("ok") or tr == "incoming":
                     twait, tsched = transport_retry_wait(page, celestial)
+                    what = "+".join(tags) if tags else seed_tag
                     return (
                         f"transport {NAMES.get(want, want)}",
                         twait,
-                        tsched or f"transport → {label(want)}→{nxt}",
-                        f"{tag}: transport {tr} p/ {label(want)}→{nxt}",
+                        tsched or f"transport → {what}",
+                        f"{tag}: transport {tr} p/ {what}",
                     )
                 detail = f"{detail}; transport: {tr}"
         wait, arr = clamp_wait_to_incoming(page, celestial, wait)

@@ -39,7 +39,7 @@ Guia para humanos e agentes. Fonte de verdade de features: [`FEATURES.md`](FEATU
 | `game/` | I/O do jogo (Page → dados / ações) | política Brain (caps, prioridade) |
 | `config.py` | settings | Playwright |
 | `tui.py` | apresentação | regras de jogo |
-| `docs/` | guias / rascunhos (FOCUS, Telegram, handoffs) | código |
+| `docs/` | guias / rascunhos (Telegram, handoffs) | código |
 
 **Fluxo de um tick**
 
@@ -78,7 +78,7 @@ meu-bot-ogame/
   tui.py
   game/
   features/             # workers + helpers de feature
-  docs/                 # FOCUS, Telegram, handoffs
+  docs/                 # Telegram, handoffs
   scripts/              # probes one-off
   FEATURES.md
   AGENTS.md

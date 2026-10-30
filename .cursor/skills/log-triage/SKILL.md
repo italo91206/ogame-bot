@@ -42,7 +42,7 @@ YYYY-MM-DD HH:MM:SS [level] message
    - **Correto** (config/leave/fila) — o que mudar se o usuário quiser outro comportamento
    - **Confuso** (mensagem enganosa) — fix de reason, não de lógica
    - **Bug** — arquivo + condição raiz
-   - **Competição** (Expo vs Colonize/LF) — apontar leave / Focus (`docs/FOCUS.md`)
+   - **Competição** (Expo vs Colonize/LF) — apontar leave / perfil Focus (`focus.py`)
 
 ## Output (obrigatório)
 
